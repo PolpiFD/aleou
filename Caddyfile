@@ -3,14 +3,14 @@
 
 {
     # Configuration globale
-    email {$CADDY_EMAIL}
+    email anthony.fauchere@futurdigital.ch
     # auto_https activé par défaut en production
 }
 
 # Configuration pour développement local
 :80 {
     reverse_proxy aleou-app:8501 {
-        header_up Host {upstream_hostport}
+        header_up Host {upstream_hostport}T
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-For {remote_host}
         header_up X-Forwarded-Proto {scheme}

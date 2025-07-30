@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: aleou-app
     ports:
-      - "8501:8501"
+      - "8501:8501"  # Exposé pour debug/développement - à supprimer en production
     volumes:
       # 🔧 Code monté en volume pour développement rapide
       - ./:/app
