@@ -18,7 +18,7 @@ Cette architecture simplifiée permet un déploiement **100% automatique** :
 # Connexion à votre VPS
 ssh root@YOUR_VPS_IP
 
-# Mise à jour système
+# Mise à jour système (Debian)
 apt update && apt upgrade -y
 
 # Installation Docker

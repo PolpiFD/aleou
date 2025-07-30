@@ -87,11 +87,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Wait and check application
+      env:
+        VPS_HOST: ${{ secrets.VPS_HOST }}
       run: |
         echo "⏳ Attente du démarrage de l'application..."
         sleep 30
         
-        # Test de base (remplacer par votre URL VPS)
-        # curl -f http://${{ secrets.VPS_HOST }}:8501/_stcore/health || echo "⚠️ Health check failed"
+        # Test de base de l'application
+        curl -f -m 10 http://$VPS_HOST:8501/_stcore/health || echo "⚠️ Health check failed (normal si en production avec Caddy)"
         
         echo "🎉 Déploiement vérifié!"

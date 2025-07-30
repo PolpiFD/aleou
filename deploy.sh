@@ -7,7 +7,7 @@ set -e
 
 # Configuration par défaut
 ENVIRONMENT=${1:-development}
-PROJECT_NAME="hotel-extractor"
+PROJECT_NAME="aleou-extractor"
 COMPOSE_FILE="docker-compose.yml"
 
 # Couleurs pour les logs
