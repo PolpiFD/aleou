@@ -2,7 +2,7 @@
 
 **Architecture moderne avec déploiement automatique via GitHub Actions**
 
-## 📋 Vue d'ensemble
+## 📋 Vue d'ensembled
 
 Cette architecture simplifiée permet un déploiement **100% automatique** :
 - 🔄 **Push → Déploiement** : Chaque push sur `main` déclenche automatiquement le déploiement
