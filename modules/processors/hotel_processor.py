@@ -7,10 +7,10 @@ import time
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from ..cvent_extractor import extract_cvent_data
-from ..gmaps_extractor import extract_hotels_batch
-from ..website_extractor import extract_hotels_websites_batch
-from ...config.settings import settings
+from modules.cvent_extractor import extract_cvent_data
+from modules.gmaps_extractor import extract_hotels_batch
+from modules.website_extractor import extract_hotels_websites_batch
+from config.settings import settings
 
 
 class HotelProcessor:

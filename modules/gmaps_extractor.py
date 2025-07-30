@@ -14,9 +14,13 @@ from dataclasses import dataclass
 # Charger automatiquement le fichier .env
 
 
-from .rate_limiter import rate_limit_manager, RateLimitConfig
-from ..cache.gmaps_cache import get_global_cache
-from ..config.settings import settings
+import sys
+import os
+sys.path.insert(0, '/app')
+
+from modules.rate_limiter import rate_limit_manager, RateLimitConfig
+from cache.gmaps_cache import get_global_cache
+from config.settings import settings
 
 
 @dataclass
