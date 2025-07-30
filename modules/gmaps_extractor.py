@@ -16,7 +16,8 @@ from dataclasses import dataclass
 
 import sys
 import os
-sys.path.insert(0, '/app')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from modules.rate_limiter import rate_limit_manager, RateLimitConfig
 from cache.gmaps_cache import get_global_cache
