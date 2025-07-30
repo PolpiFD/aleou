@@ -73,6 +73,10 @@ class HotelFirecrawlSchema(BaseModel):
     meeting_rooms_count: Optional[int] = Field(None, description="Nombre de salles de réunion")
     largest_room_capacity: Optional[int] = Field(None, description="Capacité de la plus grande salle")
 
+    # Images du site
+    photos_urls: Optional[List[str]] = Field(default_factory=list, description="URLs des photos de l'hôtel")
+    photos_count: Optional[int] = Field(None, description="Nombre de photos collectées")
+
 
 @dataclass
 class FirecrawlConfig:
@@ -292,27 +296,29 @@ class FirecrawlExtractor:
                     
                     # 🎯 TRAITEMENT RÉSULTAT EXTRACT - ExtractResponse de Firecrawl
                     if hasattr(result, '__dict__'):
-                        # ExtractResponse object - convertir en dict
                         result_dict = result.__dict__
                         print(f"✅ Extraction structurée réussie pour {url}")
                         print(f"🔧 ExtractResponse keys: {list(result_dict.keys())}")
-                        return url, result_dict
                     elif isinstance(result, list) and len(result) > 0:
-                        # Liste d'ExtractResponse - prendre le premier
                         extract_data = result[0]
-                        if hasattr(extract_data, '__dict__'):
-                            extract_dict = extract_data.__dict__
-                        else:
-                            extract_dict = extract_data
+                        result_dict = extract_data.__dict__ if hasattr(extract_data, '__dict__') else extract_data
                         print(f"✅ Extraction structurée réussie pour {url}")
-                        return url, extract_dict
                     elif isinstance(result, dict):
-                        # Dict direct
+                        result_dict = result
                         print(f"✅ Extraction structurée réussie pour {url}")
-                        return url, result
                     else:
                         print(f"⚠️ Format inattendu pour {url}: {type(result)}")
-                        return url, {'error': f'Format inattendu: {type(result)}', 'raw_data': str(result)}
+                        result_dict = {'error': f'Format inattendu: {type(result)}', 'raw_data': str(result)}
+
+                    # Récupérer aussi des images du site
+                    images = await self._scrape_images(url)
+                    result_dict['photos_urls'] = images
+                    result_dict['photos_count'] = len(images)
+                    if isinstance(result_dict.get('data'), dict):
+                        result_dict['data']['photos_urls'] = images
+                        result_dict['data']['photos_count'] = len(images)
+
+                    return url, result_dict
                     
                 except Exception as e:
                     print(f"❌ Erreur scraping {url}: {e}")
@@ -383,6 +389,54 @@ class FirecrawlExtractor:
         except Exception as e:
             print(f"❌ Erreur extraction {url}: {e}")
             return {'error': f'Extraction échouée: {e}'}
+
+    async def _scrape_images(self, url: str, max_images: int = 15) -> List[str]:
+        """Scrape la page pour récupérer des URLs d'images pertinentes"""
+
+        loop = asyncio.get_event_loop()
+        try:
+            scrape_result = await loop.run_in_executor(
+                None,
+                lambda: self.app.scrape_url(url, formats=['html'])
+            )
+
+            html = ''
+            if hasattr(scrape_result, 'html') and scrape_result.html:
+                html = scrape_result.html
+            elif isinstance(scrape_result, dict):
+                html = scrape_result.get('html') or scrape_result.get('rawHtml', '')
+
+            if not html:
+                return []
+
+            from bs4 import BeautifulSoup
+            from urllib.parse import urljoin
+
+            soup = BeautifulSoup(html, 'html.parser')
+            images = []
+            for img in soup.find_all('img'):
+                src = img.get('src')
+                alt = (img.get('alt') or '').lower()
+                if not src:
+                    continue
+                if any(keyword in src.lower() for keyword in ['logo', 'icon']) or 'logo' in alt or 'icon' in alt:
+                    continue
+                if src.startswith('//'):
+                    src = 'https:' + src
+                if src.startswith('/'):
+                    src = urljoin(url, src)
+                if src.startswith('data:'):
+                    continue
+                if src not in images:
+                    images.append(src)
+                if len(images) >= max_images:
+                    break
+
+            return images
+
+        except Exception as e:
+            print(f"❌ Erreur récupération images {url}: {e}")
+            return []
     
     def _build_extraction_prompt(self) -> str:
         """Construit le prompt d'extraction optimisé pour les hôtels"""
@@ -571,7 +625,16 @@ Si une information n'est pas trouvée, laisse le champ à null."""
                     validated[field] = cleaned_value
             else:
                 validated[field] = None if field != 'summary' else ""
-        
+
+        # Images
+        photos = raw_data.get('photos_urls', [])
+        if isinstance(photos, list):
+            validated['photos_urls'] = photos[:15]
+            validated['photos_count'] = len(photos[:15])
+        else:
+            validated['photos_urls'] = []
+            validated['photos_count'] = raw_data.get('photos_count', 0) or 0
+
         return validated
     
     def _create_failure_result(self, hotel_info: Dict, error_message: str) -> Dict[str, Any]:
@@ -581,7 +644,10 @@ Si une information n'est pas trouvée, laisse le champ à null."""
             'success': False,
             'hotel_name': hotel_info.get('name', 'Hotel_Unknown'),
             'hotel_address': hotel_info.get('address', ''),
-            'website_data': {},
+            'website_data': {
+                'photos_urls': [],
+                'photos_count': 0
+            },
             'metadata': {
                 'url': hotel_info.get('website_url', ''),
                 'extraction_method': 'firecrawl',
