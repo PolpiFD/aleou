@@ -131,6 +131,7 @@ class DataExtractor:
     
     def _calculate_final_stats(self, results: List[Dict[str, Any]], total_time: float):
         """Calcule les statistiques finales d'extraction"""
+        self.stats['total_hotels'] = len(results)
         self.stats['total_time'] = total_time
         self.stats['avg_time_per_hotel'] = total_time / len(results) if results else 0
         
