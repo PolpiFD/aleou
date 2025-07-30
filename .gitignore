@@ -50,6 +50,10 @@ venv.bak/
 # Outputs et caches
 outputs/
 cache/
+!cache/
+cache/*
+!cache/__init__.py
+!cache/gmaps_cache.py
 test_outputs/
 demo_output/
 *.log

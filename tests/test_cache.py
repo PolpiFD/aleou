@@ -3,6 +3,7 @@ Tests unitaires pour le système de cache Google Maps
 """
 
 import pytest
+import pytest_asyncio
 import asyncio
 import json
 import tempfile
@@ -14,7 +15,7 @@ from cache.gmaps_cache import GoogleMapsCache
 class TestGoogleMapsCache:
     """Tests pour le cache Google Maps"""
     
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def cache(self):
         """Fixture avec cache temporaire"""
         with tempfile.TemporaryDirectory() as temp_dir:

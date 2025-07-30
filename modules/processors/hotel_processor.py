@@ -94,10 +94,14 @@ class HotelProcessor:
         """Extraction des données Cvent"""
         start_time = time.time()
         try:
-            cvent_data = await asyncio.wait_for(
-                extract_cvent_data(hotel_data),
-                timeout=settings.scraping.playwright_timeout / 1000  # Convert to seconds
-            )
+            cvent_result = extract_cvent_data(hotel_data)
+            if asyncio.iscoroutine(cvent_result):
+                cvent_data = await asyncio.wait_for(
+                    cvent_result,
+                    timeout=settings.scraping.playwright_timeout / 1000,
+                )
+            else:
+                cvent_data = cvent_result
             self.stats['cvent_time'] = time.time() - start_time
             return cvent_data
         except asyncio.TimeoutError:
@@ -116,10 +120,11 @@ class HotelProcessor:
         start_time = time.time()
         try:
             # extract_hotels_batch attend une liste
-            gmaps_results = await asyncio.wait_for(
-                extract_hotels_batch([hotel_data]),
-                timeout=30
-            )
+            gmaps_call = extract_hotels_batch([hotel_data])
+            if asyncio.iscoroutine(gmaps_call):
+                gmaps_results = await asyncio.wait_for(gmaps_call, timeout=30)
+            else:
+                gmaps_results = gmaps_call
             self.stats['gmaps_time'] = time.time() - start_time
             
             # Retourner le premier résultat
@@ -148,10 +153,11 @@ class HotelProcessor:
             if gmaps_website:
                 website_hotel_data['gmaps_website'] = gmaps_website
             
-            website_results = await asyncio.wait_for(
-                extract_hotels_websites_batch([website_hotel_data]),
-                timeout=60
-            )
+            website_call = extract_hotels_websites_batch([website_hotel_data])
+            if asyncio.iscoroutine(website_call):
+                website_results = await asyncio.wait_for(website_call, timeout=60)
+            else:
+                website_results = website_call
             self.stats['website_time'] = time.time() - start_time
             
             # Retourner le premier résultat

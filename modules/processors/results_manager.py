@@ -161,7 +161,7 @@ class ResultsManager:
         return consolidated
     
     def export_to_csv(self, filename: Optional[str] = None,
-                     include_metadata: bool = True, 
+                     include_metadata: bool = False,
                      streaming: bool = False) -> str:
         """
         Exporte les données consolidées en CSV
@@ -193,7 +193,7 @@ class ResultsManager:
             with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
                 if self.consolidated_data:
                     fieldnames = self.consolidated_data[0].keys()
-                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames, extrasaction="ignore")
                     writer.writeheader()
                     writer.writerows(self.consolidated_data)
             print(f"📄 CSV exporté: {csv_path} - {len(self.consolidated_data)} entrées")
@@ -303,7 +303,7 @@ class ResultsManager:
         fieldnames = list(self.consolidated_data[0].keys()) if self.consolidated_data else []
         
         with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             
             # Traiter par chunks
@@ -355,7 +355,7 @@ class ResultsManager:
         return cleaned_row
     
     async def export_to_csv_async(self, filename: Optional[str] = None,
-                                include_metadata: bool = True, 
+                                include_metadata: bool = False,
                                 chunk_size: int = 100) -> str:
         """
         Version asynchrone de l'export CSV pour très gros volumes
@@ -376,7 +376,7 @@ class ResultsManager:
         
         # Ouvrir en mode asynchrone pour très gros volumes
         with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             
             # Traiter par chunks avec yield entre les chunks
