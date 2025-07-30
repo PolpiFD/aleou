@@ -12,14 +12,10 @@ from datetime import datetime
 from dataclasses import dataclass
 
 # Charger automatiquement le fichier .env
-try:
-    from dotenv import load_dotenv
-    load_dotenv()  # Charge le fichier .env automatiquement
-except ImportError:
-    pass  # Si python-dotenv n'est pas installé
+
 
 from .rate_limiter import rate_limit_manager, RateLimitConfig
-from cache import get_global_cache
+from cache.gmaps_cache import get_global_cache
 from config.settings import settings
 
 
