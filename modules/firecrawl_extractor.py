@@ -19,7 +19,7 @@ except ImportError:
     print("⚠️ Firecrawl-py non installé. Installez avec: pip install firecrawl-py")
     FirecrawlApp = None
 
-from config.settings import settings
+from ..config.settings import settings
 
 
 class HotelFirecrawlSchema(BaseModel):

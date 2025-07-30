@@ -11,7 +11,7 @@ from datetime import datetime
 import pandas as pd
 from pathlib import Path
 
-from config.settings import settings
+from ...config.settings import settings
 
 
 class ResultsManager:

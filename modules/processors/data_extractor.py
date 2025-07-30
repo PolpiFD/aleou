@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Tuple
 import time
 
 from .hotel_processor import HotelProcessor
-from config.settings import settings
+from ...config.settings import settings
 
 
 class DataExtractor:

@@ -15,8 +15,8 @@ from dataclasses import dataclass
 
 
 from .rate_limiter import rate_limit_manager, RateLimitConfig
-from cache.gmaps_cache import get_global_cache
-from config.settings import settings
+from ..cache.gmaps_cache import get_global_cache
+from ..config.settings import settings
 
 
 @dataclass
