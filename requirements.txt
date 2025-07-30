@@ -1,0 +1,50 @@
+# Dépendances core de l'application
+aiohttp==3.12.15
+asyncio-throttle==1.0.2
+python-dotenv==1.1.1
+
+# Scraping et navigateur
+playwright==1.54.0
+beautifulsoup4==4.13.4
+lxml==6.0.0
+
+# API et processing
+openai==1.97.2
+requests==2.32.4
+firecrawl-py==2.16.3
+pydantic==2.11.7
+
+# Data processing et export
+pandas==2.3.1
+openpyxl==3.1.5
+numpy==2.3.2
+
+# Cache et optimisations
+aiofiles==24.1.0
+
+# Interface utilisateur
+streamlit==1.47.1
+
+# Tests et développement
+pytest==8.4.1
+pytest-asyncio==1.1.0
+pytest-cov==6.2.1
+
+# Type checking et qualité code
+mypy==1.17.0
+black==25.1.0
+flake8==7.3.0
+
+# Surveillance et monitoring
+psutil==7.0.0
+
+# Gestion des erreurs et logging
+loguru==0.7.3
+
+# Sécurité
+cryptography>=45.0.0
+
+# Utilitaires
+click==8.2.1
+rich==14.1.0
+tqdm==4.67.1

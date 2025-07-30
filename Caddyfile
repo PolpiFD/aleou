@@ -1,0 +1,49 @@
+# Configuration Caddy pour l'application d'extraction hôtelière
+# Configuration corrigée pour aleou.futurdigitaln8n.ch
+
+{
+    # Configuration globale
+    email {$CADDY_EMAIL}
+    # auto_https activé par défaut en production
+}
+
+# Configuration pour développement local
+:80 {
+    reverse_proxy aleou-app:8501 {
+        header_up Host {upstream_hostport}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+    
+    # Logs pour le debugging
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+}
+
+# Configuration pour production avec HTTPS automatique
+aleou.futurdigitaln8n.ch {
+    reverse_proxy aleou-app:8501 {
+        header_up Host {upstream_hostport}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+    
+    # Logs pour la production
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+    
+    # Headers de sécurité
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+}

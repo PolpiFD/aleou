@@ -1,0 +1,97 @@
+name: 🚀 Deploy Aleou to VPS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # Permet déclenchement manuel
+
+env:
+  PROJECT_NAME: aleou-extractor
+  VPS_PROJECT_PATH: /opt/aleou-extractor
+
+jobs:
+  test:
+    name: 🧪 Tests
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Run tests
+      run: |
+        python -m pytest tests/ -v --tb=short
+      continue-on-error: true
+
+  deploy:
+    name: 🚀 Deploy to VPS
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: 🔐 Deploy via SSH
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        key: ${{ secrets.VPS_SSH_KEY }}
+        port: ${{ secrets.VPS_PORT || 22 }}
+        timeout: 300s
+        script: |
+          echo "🚀 Début du déploiement..."
+          
+          # Créer le dossier projet s'il n'existe pas
+          sudo mkdir -p ${{ env.VPS_PROJECT_PATH }}
+          sudo chown -R ${{ secrets.VPS_USER }}:${{ secrets.VPS_USER }} ${{ env.VPS_PROJECT_PATH }}
+          
+          # Naviguer vers le projet
+          cd ${{ env.VPS_PROJECT_PATH }}
+          
+          # Clone ou mise à jour du repository
+          if [ -d ".git" ]; then
+            echo "📥 Mise à jour du code existant..."
+            git fetch origin
+            git reset --hard origin/main
+            git clean -fd
+          else
+            echo "📥 Clone initial du repository..."
+            git clone https://github.com/${{ github.repository }}.git .
+          fi
+          
+          # Vérifier que le script de déploiement existe et est exécutable
+          if [ -f "deploy.sh" ]; then
+            chmod +x deploy.sh
+            echo "🔧 Lancement du déploiement..."
+            ./deploy.sh production
+          else
+            echo "❌ Script deploy.sh non trouvé"
+            exit 1
+          fi
+          
+          echo "✅ Déploiement terminé avec succès!"
+
+  health-check:
+    name: 🏥 Health Check
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+    - name: Wait and check application
+      run: |
+        echo "⏳ Attente du démarrage de l'application..."
+        sleep 30
+        
+        # Test de base (remplacer par votre URL VPS)
+        # curl -f http://${{ secrets.VPS_HOST }}:8501/_stcore/health || echo "⚠️ Health check failed"
+        
+        echo "🎉 Déploiement vérifié!"

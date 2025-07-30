@@ -1,0 +1,100 @@
+# 🚀 Aleou Extractor - GitIgnore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.cursorrules
+
+# Environment variables
+*.env
+.env.local
+.env.production
+.env.development
+
+# Outputs et caches
+outputs/
+cache/
+test_outputs/
+demo_output/
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+.cache/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker
+.dockerignore
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Test files temporaires
+test_firecrawl_*.py
+vps_health_check.py
+
+# Playwright
+playwright-report/
+test-results/
