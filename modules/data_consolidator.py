@@ -167,6 +167,23 @@ def consolidate_hotel_extractions(extraction_results: List[Dict], output_dir: st
         # 🔧 NOUVEAU - Nettoyer les types pour éviter l'erreur PyArrow
         df_consolidated = clean_data_types_for_display(df_consolidated)
         
+        # 🔧 FILTRAGE - Supprimer les colonnes non désirées
+        columns_to_remove = [
+            'gmaps_is_closed',
+            'cvent_interface_type', 
+            'website_description',
+            'website_content_length',
+            'website_fields_extracted',
+            'website_extraction_method',
+            'website_meeting_rooms_available'
+        ]
+        
+        # Supprimer uniquement les colonnes qui existent
+        existing_columns_to_remove = [col for col in columns_to_remove if col in df_consolidated.columns]
+        if existing_columns_to_remove:
+            print(f"🔧 Suppression des colonnes non désirées: {existing_columns_to_remove}")
+            df_consolidated = df_consolidated.drop(columns=existing_columns_to_remove)
+        
         # Sauvegarder
         df_consolidated.to_csv(consolidation_path, index=False, encoding='utf-8')
         
