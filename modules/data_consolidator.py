@@ -175,7 +175,9 @@ def consolidate_hotel_extractions(extraction_results: List[Dict], output_dir: st
             'website_content_length',
             'website_fields_extracted',
             'website_extraction_method',
-            'website_meeting_rooms_available'
+            'website_meeting_rooms_available',
+            'website_images_found',
+            'website_meeting_rooms_count'
         ]
         
         # Supprimer uniquement les colonnes qui existent
