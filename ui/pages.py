@@ -35,7 +35,20 @@ class CSVExtractionPage:
     def _handle_uploaded_file(self, uploaded_file):
         """Traite le fichier CSV uploadé"""
         try:
-            df = pd.read_csv(uploaded_file)
+            # Essayer différents encodages
+            encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
+            df = None
+            
+            for encoding in encodings:
+                try:
+                    uploaded_file.seek(0)  # Reset file pointer
+                    df = pd.read_csv(uploaded_file, encoding=encoding)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            
+            if df is None:
+                raise ValueError("Impossible de décoder le fichier CSV. Veuillez le sauvegarder en UTF-8.")
             
             if self._validate_csv_format(df):
                 self._show_csv_preview(df)

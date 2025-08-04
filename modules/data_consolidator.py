@@ -74,7 +74,20 @@ def consolidate_hotel_extractions(extraction_results: List[Dict], output_dir: st
                 data_file = cvent_data.get('data_file')
                 if data_file and os.path.exists(data_file):
                     try:
-                        df_hotel = pd.read_csv(data_file, encoding='utf-8')
+                        # Essayer différents encodages
+                        encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
+                        df_hotel = None
+                        
+                        for encoding in encodings:
+                            try:
+                                df_hotel = pd.read_csv(data_file, encoding=encoding)
+                                break
+                            except UnicodeDecodeError:
+                                continue
+                        
+                        if df_hotel is None:
+                            raise ValueError(f"Impossible de décoder le fichier {data_file}")
+                        
                         headers = df_hotel.columns.tolist()
                         rows = df_hotel.values.tolist()
                         print(f"✅ {hotel_name}: {len(rows)} salles chargées depuis {os.path.basename(data_file)}")
@@ -652,7 +665,15 @@ def load_csv_preview(csv_path: str, max_rows: int = 10) -> pd.DataFrame:
     
     try:
         if os.path.exists(csv_path):
-            return pd.read_csv(csv_path, nrows=max_rows, encoding='utf-8')
+            # Essayer différents encodages
+            encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
+            for encoding in encodings:
+                try:
+                    return pd.read_csv(csv_path, nrows=max_rows, encoding=encoding)
+                except UnicodeDecodeError:
+                    continue
+            # Si aucun encodage ne fonctionne
+            raise ValueError(f"Impossible de décoder le fichier {csv_path}")
         else:
             return pd.DataFrame()
     except Exception as e:
