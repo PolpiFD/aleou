@@ -276,7 +276,11 @@ def clean_header_name(header: str) -> str:
         'salle de conférence': 'capacite_conference',
         'Demi-lune (Cabaret)': 'capacite_cabaret',
         'Demi-lune': 'capacite_cabaret',
-        'demi-lune': 'capacite_cabaret'
+        'demi-lune': 'capacite_cabaret',
+        
+        # 🔥 NOUVEAU: Carré ouvert
+        'Carré ouvert': 'capacite_carre_ouvert',
+        'carré ouvert': 'capacite_carre_ouvert'
     }
     
     # Utiliser le mapping si disponible
