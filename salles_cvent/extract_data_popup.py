@@ -20,11 +20,33 @@ def extract_data_popup(page):
         all_room_names.append(name)
     print(f"🏨 Salles détectées: {all_room_names}")
     
-    # 🔧 TOUJOURS utiliser les headers standardisés pour éviter les doublons Pandas  
-    headers = ['Salles de réunion', 'Taille', 'Hauteur du plafond', 'Capacité max', 
-               'En U', 'En banquet', 'En cocktail', 'Théâtre', 'Salle de classe', 'Salle de conférence', 'Demi-lune']
-    
-    print(f"📋 Headers standardisés utilisés: {headers}")
+    # 🔥 NOUVEAU: Extraire les headers réels depuis le HTML
+    try:
+        print("🔍 Extraction des headers réels depuis le HTML...")
+        header_spans = page.locator('thead th span.break-words, thead th span[class*="text-neutral-80"]')
+        
+        real_headers = []
+        for i in range(header_spans.count()):
+            header_text = header_spans.nth(i).inner_text().strip()
+            if header_text and len(header_text) > 1:
+                real_headers.append(header_text)
+        
+        print(f"📋 Headers extraits du HTML: {real_headers}")
+        
+        # Construire headers finaux: toujours 'Salles de réunion' en premier + headers réels
+        if real_headers:
+            headers = ['Salles de réunion'] + real_headers[1:] if len(real_headers) > 1 else ['Salles de réunion'] + real_headers
+            print(f"✅ Headers utilisés: {headers}")
+        else:
+            raise Exception("Aucun header extrait")
+            
+    except Exception as e:
+        print(f"⚠️ Extraction headers échouée: {e}")
+        print("🔧 Utilisation des headers fixes comme fallback")
+        # Fallback sur headers fixes
+        headers = ['Salles de réunion', 'Taille', 'Hauteur du plafond', 'Capacité max', 
+                   'En U', 'En banquet', 'En cocktail', 'Théâtre', 'Salle de classe', 'Salle de conférence', 'Demi-lune']
+        print(f"📋 Headers de fallback utilisés: {headers}")
     
     # Extraction ligne par ligne avec élimination des doublons
     data = []
