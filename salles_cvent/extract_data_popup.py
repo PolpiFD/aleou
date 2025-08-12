@@ -23,22 +23,26 @@ def extract_data_popup(page):
     # 🔥 NOUVEAU: Extraire les headers réels depuis le HTML
     try:
         print("🔍 Extraction des headers réels depuis le HTML...")
-        header_spans = page.locator('thead th span.break-words, thead th span[class*="text-neutral-80"]')
+        # Cibler uniquement la première table (pas la modale dupliquée)
+        header_spans = page.locator('table:first-of-type thead th span.break-words, table:first-of-type thead th span[class*="text-neutral-80"]')
         
         real_headers = []
+        seen_headers = set()  # Éviter les doublons
+        
         for i in range(header_spans.count()):
             header_text = header_spans.nth(i).inner_text().strip()
-            if header_text and len(header_text) > 1:
+            if header_text and len(header_text) > 1 and header_text not in seen_headers:
                 real_headers.append(header_text)
+                seen_headers.add(header_text)
         
-        print(f"📋 Headers extraits du HTML: {real_headers}")
+        print(f"📋 Headers extraits du HTML (dédoublonnés): {real_headers}")
         
-        # Construire headers finaux: toujours 'Salles de réunion' en premier + headers réels
-        if real_headers:
-            headers = ['Salles de réunion'] + real_headers[1:] if len(real_headers) > 1 else ['Salles de réunion'] + real_headers
+        # Construire headers finaux: toujours 'Salles de réunion' en premier + headers réels (sauf le premier qui est 'Nom')
+        if real_headers and len(real_headers) > 1:
+            headers = ['Salles de réunion'] + real_headers[1:]
             print(f"✅ Headers utilisés: {headers}")
         else:
-            raise Exception("Aucun header extrait")
+            raise Exception("Pas assez de headers extraits")
             
     except Exception as e:
         print(f"⚠️ Extraction headers échouée: {e}")
