@@ -153,7 +153,16 @@ class ExtractionService:
                 print(f"   Hôtel {i+1}: {result.get('name', 'N/A')} - Success: {result.get('success', 'N/A')}")
             
             # Consolidation avec données Google Maps et Website si disponibles
-            consolidation_stats = consolidate_hotel_extractions(results, include_gmaps=extract_gmaps, include_website=extract_website)
+            # 🔧 NOUVEAU: Batching automatique pour gros volumes
+            if len(results) <= 200:
+                # Comportement normal pour petits volumes (inchangé)
+                print(f"📝 Mode consolidation normal ({len(results)} hôtels <= 200)")
+                consolidation_stats = consolidate_hotel_extractions(results, include_gmaps=extract_gmaps, include_website=extract_website)
+            else:
+                # Mode batching pour gros volumes
+                print(f"📦 Mode consolidation par batches ({len(results)} hôtels > 200)")
+                consolidation_stats = self._consolidate_by_batches(results, extract_gmaps=extract_gmaps, extract_website=extract_website)
+            
             self._update_session_stats_parallel(consolidation_stats)
             
             # Vérifier si la consolidation a réussi
@@ -502,7 +511,8 @@ class ExtractionService:
                     label="📥 Télécharger le fichier d'urgence",
                     data=f.read(),
                     file_name=os.path.basename(emergency_file),
-                    mime="text/csv"
+                    mime="text/csv",
+                    key="emergency_download_btn"
                 )
             
             return emergency_file
@@ -613,6 +623,141 @@ class ExtractionService:
                 
         except Exception as e:
             print(f"❌ Erreur lors de la consolidation progressive: {e}")
+            return None
+    
+    def _consolidate_by_batches(self, results, extract_gmaps: bool = True, extract_website: bool = True):
+        """Consolide par batches de 200 hôtels pour éviter les crashes mémoire
+        
+        Args:
+            results: Liste complète des résultats d'extraction
+            extract_gmaps: Inclure données Google Maps
+            extract_website: Inclure données Website
+        
+        Returns:
+            Dict: Statistiques de consolidation finale
+        """
+        from modules.data_consolidator import consolidate_hotel_extractions
+        
+        try:
+            BATCH_SIZE = 200
+            total_hotels = len(results)
+            all_batch_files = []
+            combined_stats = {
+                'total_hotels': total_hotels,
+                'successful_extractions': 0,
+                'failed_extractions': 0,
+                'total_rooms': 0,
+                'hotels_with_data': [],
+                'failed_hotels': [],
+                'consolidation_file': None,
+                'preview_data': [],
+                'unique_headers': set(),
+                'consolidation_date': ''
+            }
+            
+            print(f"🔄 Traitement par batches de {BATCH_SIZE} hôtels...")
+            
+            # Traiter chaque batch
+            for i in range(0, total_hotels, BATCH_SIZE):
+                batch = results[i:i + BATCH_SIZE]
+                batch_num = (i // BATCH_SIZE) + 1
+                total_batches = (total_hotels - 1) // BATCH_SIZE + 1
+                
+                print(f"   📦 Batch {batch_num}/{total_batches}: {len(batch)} hôtels")
+                
+                # Consolider ce batch avec la logique existante
+                batch_stats = consolidate_hotel_extractions(
+                    batch, 
+                    include_gmaps=extract_gmaps, 
+                    include_website=extract_website
+                )
+                
+                # Accumuler les statistiques
+                combined_stats['successful_extractions'] += batch_stats['successful_extractions']
+                combined_stats['failed_extractions'] += batch_stats['failed_extractions']
+                combined_stats['total_rooms'] += batch_stats['total_rooms']
+                combined_stats['hotels_with_data'].extend(batch_stats['hotels_with_data'])
+                combined_stats['failed_hotels'].extend(batch_stats['failed_hotels'])
+                combined_stats['unique_headers'].update(batch_stats['unique_headers'])
+                
+                # Garder le premier fichier pour le preview
+                if batch_num == 1:
+                    combined_stats['preview_data'] = batch_stats['preview_data']
+                    combined_stats['consolidation_date'] = batch_stats['consolidation_date']
+                
+                # Sauvegarder le fichier de ce batch
+                if batch_stats.get('consolidation_file'):
+                    all_batch_files.append(batch_stats['consolidation_file'])
+                    print(f"   ✅ Batch {batch_num} consolidé: {batch_stats['successful_extractions']} succès, {batch_stats['total_rooms']} salles")
+            
+            # Fusionner tous les fichiers CSV en un seul
+            if all_batch_files:
+                print(f"🔗 Fusion de {len(all_batch_files)} fichiers CSV...")
+                final_file = self._merge_csv_files(all_batch_files)
+                if final_file:
+                    combined_stats['consolidation_file'] = final_file
+                    print(f"✅ Consolidation par batches terminée: {final_file}")
+                else:
+                    print("⚠️ Fusion échouée, utilisation du dernier batch")
+                    combined_stats['consolidation_file'] = all_batch_files[-1]
+            
+            return combined_stats
+            
+        except Exception as e:
+            print(f"❌ Erreur consolidation par batches: {e}")
+            return combined_stats
+    
+    def _merge_csv_files(self, csv_files):
+        """Fusionne plusieurs fichiers CSV en un seul
+        
+        Args:
+            csv_files: Liste des chemins vers les fichiers CSV à fusionner
+        
+        Returns:
+            str: Chemin vers le fichier fusionné
+        """
+        from datetime import datetime
+        import pandas as pd
+        import os
+        
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            merged_file = f'outputs/hotels_consolidation_merged_{timestamp}.csv'
+            
+            print(f"🔗 Fusion en cours vers {merged_file}...")
+            
+            first_file = True
+            total_rows = 0
+            
+            for i, csv_file in enumerate(csv_files):
+                if os.path.exists(csv_file):
+                    try:
+                        df = pd.read_csv(csv_file, encoding='utf-8')
+                        total_rows += len(df)
+                        
+                        # Premier fichier: créer avec headers
+                        if first_file:
+                            df.to_csv(merged_file, index=False, encoding='utf-8', mode='w')
+                            first_file = False
+                            print(f"   📄 Fichier 1/{len(csv_files)}: {len(df)} lignes (headers)")
+                        else:
+                            # Fichiers suivants: append sans headers
+                            df.to_csv(merged_file, index=False, encoding='utf-8', mode='a', header=False)
+                            print(f"   📄 Fichier {i+1}/{len(csv_files)}: {len(df)} lignes (append)")
+                        
+                        # Nettoyer le fichier temporaire après fusion
+                        os.remove(csv_file)
+                        print(f"   🗑️ Fichier temporaire supprimé: {os.path.basename(csv_file)}")
+                        
+                    except Exception as e:
+                        print(f"⚠️ Erreur traitement {csv_file}: {e}")
+                        continue
+            
+            print(f"✅ Fusion terminée: {total_rows} lignes totales")
+            return merged_file
+            
+        except Exception as e:
+            print(f"❌ Erreur fusion CSV: {e}")
             return None
 
 
