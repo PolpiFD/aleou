@@ -10,7 +10,7 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install system dependencies required for the application
+# Install system dependencies required for the application  
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
@@ -19,9 +19,19 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     && rm -rf /var/lib/apt/lists/*
 
+# Add non-free repository for fonts-ubuntu
+RUN echo "deb http://deb.debian.org/debian trixie non-free" >> /etc/apt/sources.list
+
 # Install Playwright dependencies
 RUN pip install --no-cache-dir playwright==1.54.0
 RUN playwright install chromium
+
+# Pre-install the font packages that Playwright expects
+RUN apt-get update && apt-get install -y \
+    fonts-ubuntu \
+    fonts-unifont \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN playwright install-deps chromium
 
 # Copy requirements first for better Docker layer caching
