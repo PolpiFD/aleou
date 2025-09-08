@@ -148,16 +148,13 @@ class ParallelHotelProcessor:
         # Diviser en batches
         batches = self._create_batches(hotels_data)
         
-        # Créer les tâches parallèles avec limitation pour Firecrawl
+        # Créer les tâches parallèles 
         tasks = []
-        # 🚦 FIRECRAWL RATE LIMITING: 1 seul batch à la fois si website extraction
-        max_concurrent = 1 if extract_website else self.config.max_workers
+        # 🚀 FIRECRAWL 100 REQ/MIN: Peut maintenant gérer plusieurs batches concurrents
+        max_concurrent = self.config.max_workers  # Plus de limitation pour Firecrawl
         semaphore = asyncio.Semaphore(max_concurrent)
         
-        if extract_website:
-            print(f"🚦 Limitation à 1 batch concurrent (Firecrawl rate limiting)")
-        else:
-            print(f"🚀 {self.config.max_workers} batches concurrents (pas de website)")
+        print(f"🚀 {self.config.max_workers} batches concurrents (Firecrawl 100 req/min)")
         
         for batch_index, batch in enumerate(batches):
             task = self._process_batch_with_semaphore(
