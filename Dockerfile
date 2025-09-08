@@ -17,6 +17,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     wget \
     gnupg \
+    libxfixes3 \
+    libxkbcommon0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Playwright dependencies
