@@ -716,10 +716,13 @@ class ExtractionService:
                     # 🚀 MISE À JOUR EN TEMPS RÉEL DE L'INTERFACE
                     if 'progressive_consolidation_file' not in st.session_state:
                         st.session_state.progressive_consolidation_file = None
-                    
+
                     st.session_state.progressive_consolidation_file = progressive_path
                     st.session_state.progressive_hotels_count = hotels_count
                     st.session_state.progressive_stats = progressive_stats
+
+                    # Force un rafraîchissement de l'interface après mise à jour de l'état
+                    st.experimental_rerun()
                     
                     print(f"   ✅ Fichier progressif créé: {progressive_filename}")
                     print(f"      📈 {progressive_stats['successful_extractions']} extractions, {progressive_stats['total_rooms']} salles")
