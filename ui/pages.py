@@ -88,6 +88,58 @@ class CSVExtractionPage:
                 )
             else:
                 st.warning("⚠️ Aucune extraction sélectionnée")
+        
+        # 🚀 NOUVEAU: Téléchargement progressif pendant l'extraction
+        self._show_progressive_download()
+    
+    def _show_progressive_download(self):
+        """Affiche le bouton de téléchargement progressif si disponible"""
+        # Vérifier si un fichier progressif est disponible
+        if hasattr(st.session_state, 'progressive_consolidation_file') and st.session_state.progressive_consolidation_file:
+            st.markdown("---")
+            st.subheader("📥 Téléchargement progressif disponible")
+            
+            # Informations sur le fichier progressif
+            hotels_count = getattr(st.session_state, 'progressive_hotels_count', 0)
+            progressive_stats = getattr(st.session_state, 'progressive_stats', {})
+            
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                st.info(f"🏨 **{hotels_count} hôtels** traités avec succès")
+                if progressive_stats:
+                    st.info(f"📊 **{progressive_stats.get('successful_extractions', 0)} extractions** réussies")
+                    st.info(f"🏢 **{progressive_stats.get('total_rooms', 0)} salles** de conférence trouvées")
+                st.success("✅ **Fichier intermédiaire prêt** - Traitement en cours...")
+            
+            with col2:
+                # Bouton de téléchargement du fichier progressif
+                self._render_progressive_download_button()
+
+    def _render_progressive_download_button(self):
+        """Affiche le bouton de téléchargement du fichier progressif"""
+        try:
+            progressive_file = st.session_state.progressive_consolidation_file
+            hotels_count = getattr(st.session_state, 'progressive_hotels_count', 0)
+            
+            if progressive_file and os.path.exists(progressive_file):
+                with open(progressive_file, 'r', encoding='utf-8') as f:
+                    csv_content = f.read()
+                
+                st.download_button(
+                    label=f"📥 Télécharger\n({hotels_count} hôtels)",
+                    data=csv_content,
+                    file_name=os.path.basename(progressive_file),
+                    mime="text/csv",
+                    type="secondary",
+                    use_container_width=True,
+                    key=f"progressive_download_{hotels_count}"  # Key unique pour éviter les conflits
+                )
+            else:
+                st.error("❌ Fichier progressif non trouvé")
+                
+        except Exception as e:
+            st.error(f"Erreur téléchargement progressif: {e}")
 
 
 class SingleURLExtractionPage:
@@ -114,6 +166,9 @@ class SingleURLExtractionPage:
         # Traitement des résultats EN DEHORS du formulaire
         if submitted:
             self._handle_form_submission(hotel_data, options)
+        
+        # 🚀 NOUVEAU: Téléchargement progressif pendant l'extraction
+        self._show_progressive_download()
     
     def _get_hotel_form_data(self):
         """Récupère les données du formulaire hôtel"""
@@ -189,6 +244,55 @@ class SingleURLExtractionPage:
             return False
         
         return True
+    
+    def _show_progressive_download(self):
+        """Affiche le bouton de téléchargement progressif si disponible"""
+        # Vérifier si un fichier progressif est disponible
+        if hasattr(st.session_state, 'progressive_consolidation_file') and st.session_state.progressive_consolidation_file:
+            st.markdown("---")
+            st.subheader("📥 Téléchargement progressif disponible")
+            
+            # Informations sur le fichier progressif
+            hotels_count = getattr(st.session_state, 'progressive_hotels_count', 0)
+            progressive_stats = getattr(st.session_state, 'progressive_stats', {})
+            
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                st.info(f"🏨 **{hotels_count} hôtels** traités avec succès")
+                if progressive_stats:
+                    st.info(f"📊 **{progressive_stats.get('successful_extractions', 0)} extractions** réussies")
+                    st.info(f"🏢 **{progressive_stats.get('total_rooms', 0)} salles** de conférence trouvées")
+                st.success("✅ **Fichier intermédiaire prêt** - Traitement en cours...")
+            
+            with col2:
+                # Bouton de téléchargement du fichier progressif
+                self._render_progressive_download_button()
+
+    def _render_progressive_download_button(self):
+        """Affiche le bouton de téléchargement du fichier progressif"""
+        try:
+            progressive_file = st.session_state.progressive_consolidation_file
+            hotels_count = getattr(st.session_state, 'progressive_hotels_count', 0)
+            
+            if progressive_file and os.path.exists(progressive_file):
+                with open(progressive_file, 'r', encoding='utf-8') as f:
+                    csv_content = f.read()
+                
+                st.download_button(
+                    label=f"📥 Télécharger\n({hotels_count} hôtels)",
+                    data=csv_content,
+                    file_name=os.path.basename(progressive_file),
+                    mime="text/csv",
+                    type="secondary",
+                    use_container_width=True,
+                    key=f"single_progressive_download_{hotels_count}"  # Key unique pour éviter les conflits avec CSV page
+                )
+            else:
+                st.error("❌ Fichier progressif non trouvé")
+                
+        except Exception as e:
+            st.error(f"Erreur téléchargement progressif: {e}")
 
 
 class ResultsDisplayPage:
