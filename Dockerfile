@@ -1,5 +1,5 @@
-# Use Python 3.11 slim image for better performance and smaller size
-FROM python:3.11-slim
+# Use Python 3.11 slim image based on Debian Bookworm (stable) instead of Trixie
+FROM python:3.11-slim-bookworm
 
 # Set working directory
 WORKDIR /app
@@ -22,21 +22,18 @@ RUN apt-get update && apt-get install -y \
 # Install Playwright dependencies
 RUN pip install --no-cache-dir playwright==1.54.0
 RUN playwright install chromium
-
-# Install Playwright system dependencies with fallback for font packages
-RUN playwright install-deps chromium || \
-    (apt-get update && apt-get install -y \
-        fonts-unifont \
-        fonts-ubuntu \
-        libasound2 \
-        libatk-bridge2.0-0 \
-        libdrm2 \
-        libxkbcommon0 \
-        libxrandr2 \
-        libxss1 \
-        libxtst6 \
-        xvfb \
-        && rm -rf /var/lib/apt/lists/*)
+# Skip playwright install-deps to avoid font package conflicts
+RUN apt-get update && apt-get install -y \
+    libnss3 \
+    libatk-bridge2.0-0 \
+    libdrm2 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libxss1 \
+    libasound2 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better Docker layer caching
 COPY requirements.txt .
