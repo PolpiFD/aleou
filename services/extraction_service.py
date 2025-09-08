@@ -626,26 +626,16 @@ class ExtractionService:
             return None
     
     def _consolidate_by_batches(self, results, extract_gmaps: bool = True, extract_website: bool = True):
-        """Consolide par batches de 200 hôtels avec fichiers progressifs disponibles
-        Crée un fichier téléchargeable après chaque batch pour éviter les pertes
-        
-        Args:
-            results: Liste complète des résultats d'extraction
-            extract_gmaps: Inclure données Google Maps
-            extract_website: Inclure données Website
-        
-        Returns:
-            Dict: Statistiques de consolidation finale
-        """
-        import streamlit as st
+        """Consolide par batches de 200 hôtels puis fusionne les fichiers"""
         from modules.data_consolidator import consolidate_hotel_extractions
-        
+        from datetime import datetime
+        import os
+
         try:
             BATCH_SIZE = 200
             total_hotels = len(results)
             all_batch_files = []
-            cumulative_results = []  # Résultats cumulés pour fichiers progressifs
-            
+
             combined_stats = {
                 'total_hotels': total_hotels,
                 'successful_extractions': 0,
@@ -658,91 +648,56 @@ class ExtractionService:
                 'unique_headers': set(),
                 'consolidation_date': ''
             }
-            
-            print(f"🔄 Consolidation progressive par batches de {BATCH_SIZE} hôtels...")
-            
-            # Traiter chaque batch
+
+            print(f"🔄 Consolidation par batches de {BATCH_SIZE} hôtels...")
+
             for i in range(0, total_hotels, BATCH_SIZE):
                 batch = results[i:i + BATCH_SIZE]
                 batch_num = (i // BATCH_SIZE) + 1
                 total_batches = (total_hotels - 1) // BATCH_SIZE + 1
-                
                 print(f"   📦 Batch {batch_num}/{total_batches}: {len(batch)} hôtels")
-                
-                # Filtrer les résultats avec au moins une extraction réussie
+
                 valid_batch = []
                 for result in batch:
                     has_cvent = result.get('cvent_data', {}).get('salles_count', 0) > 0
                     has_gmaps = result.get('gmaps_data', {}).get('extraction_status') == 'success'
                     has_website = result.get('website_data') and len(result.get('website_data', {})) > 0
-                    
                     if has_cvent or has_gmaps or has_website:
                         valid_batch.append(result)
-                
+
                 if not valid_batch:
                     print(f"   ⚠️ Batch {batch_num} ignoré - aucune donnée exploitable")
                     continue
-                
-                # Ajouter au cumul pour consolidation progressive
-                cumulative_results.extend(valid_batch)
-                
-                print(f"   📊 Consolidation cumulative: {len(cumulative_results)} hôtels avec données")
-                
-                # Consolider CUMULATIVEMENT (tous les résultats depuis le début)
-                progressive_stats = consolidate_hotel_extractions(
-                    cumulative_results, 
-                    include_gmaps=extract_gmaps, 
+
+                batch_stats = consolidate_hotel_extractions(
+                    valid_batch,
+                    include_gmaps=extract_gmaps,
                     include_website=extract_website
                 )
-                
-                if progressive_stats and progressive_stats.get('consolidation_file'):
-                    # Renommer le fichier pour indiquer qu'il est progressif
-                    import os
-                    from datetime import datetime
-                    
-                    old_file = progressive_stats['consolidation_file']
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    hotels_count = len(cumulative_results)
-                    
-                    # Nouveau nom: hotels_progressive_1-400_timestamp.csv
-                    base_dir = os.path.dirname(old_file)
-                    progressive_filename = f"hotels_progressive_1-{hotels_count}_{timestamp}.csv"
-                    progressive_path = os.path.join(base_dir, progressive_filename)
-                    
-                    # Renommer le fichier
-                    os.rename(old_file, progressive_path)
-                    progressive_stats['consolidation_file'] = progressive_path
-                    
-                    # 🚀 MISE À JOUR EN TEMPS RÉEL DE L'INTERFACE
-                    if 'progressive_consolidation_file' not in st.session_state:
-                        st.session_state.progressive_consolidation_file = None
-                    
-                    st.session_state.progressive_consolidation_file = progressive_path
-                    st.session_state.progressive_hotels_count = hotels_count
-                    st.session_state.progressive_stats = progressive_stats
-                    
-                    print(f"   ✅ Fichier progressif créé: {progressive_filename}")
-                    print(f"      📈 {progressive_stats['successful_extractions']} extractions, {progressive_stats['total_rooms']} salles")
-                    
-                    # Accumuler les statistiques
-                    combined_stats = progressive_stats.copy()
-                    combined_stats['total_hotels'] = total_hotels  # Garder le total original
-                    
-                    all_batch_files.append(progressive_path)
-                
+
+                if batch_stats and batch_stats.get('consolidation_file'):
+                    all_batch_files.append(batch_stats['consolidation_file'])
+                    combined_stats['successful_extractions'] += batch_stats['successful_extractions']
+                    combined_stats['failed_extractions'] += batch_stats['failed_extractions']
+                    combined_stats['total_rooms'] += batch_stats['total_rooms']
+                    combined_stats['hotels_with_data'].extend(batch_stats['hotels_with_data'])
+                    combined_stats['failed_hotels'].extend(batch_stats['failed_hotels'])
+                    combined_stats['unique_headers'].update(batch_stats.get('unique_headers', []))
+                    if not combined_stats['preview_data'] and batch_stats.get('preview_data'):
+                        combined_stats['preview_data'] = batch_stats['preview_data'][:10]
                 else:
                     print(f"   ❌ Échec consolidation batch {batch_num}")
-            
-            # Le dernier fichier est le fichier final
+
             if all_batch_files:
-                combined_stats['consolidation_file'] = all_batch_files[-1]  # Dernier fichier = plus complet
-                print(f"✅ Consolidation progressive terminée: {len(all_batch_files)} fichiers créés")
-                print(f"📄 Fichier final: {os.path.basename(combined_stats['consolidation_file'])}")
+                merged_file = self._merge_csv_files(all_batch_files)
+                combined_stats['consolidation_file'] = merged_file
+                combined_stats['consolidation_date'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                print(f"✅ Consolidation terminée: {os.path.basename(merged_file)}")
             else:
                 print("❌ Aucun fichier consolidé créé")
-                
+
             return combined_stats
-            
+
         except Exception as e:
             print(f"❌ Erreur consolidation progressive: {e}")
             import traceback
