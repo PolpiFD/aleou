@@ -98,6 +98,11 @@ class ExtractionService:
         # Progress bar globale
         progress_bar = st.progress(0)
         status_text = st.empty()
+
+        # Placeholder pour téléchargement progressif
+        self.progressive_placeholder = st.empty()
+        st.session_state.progressive_consolidation_file = None
+        st.session_state.progressive_consolidation_name = None
         
         # Callback de progression
         def update_progress(stats):
@@ -152,7 +157,12 @@ class ExtractionService:
                 print(f"   Hôtel {i+1}: {result.get('name', 'N/A')} - Success: {result.get('success', 'N/A')}")
             
             # Consolidation avec données Google Maps et Website si disponibles
-            consolidation_stats = consolidate_hotel_extractions(results, include_gmaps=extract_gmaps, include_website=extract_website)
+            consolidation_stats = consolidate_hotel_extractions(
+                results,
+                include_gmaps=extract_gmaps,
+                include_website=extract_website,
+                progress_callback=self._update_progressive_display,
+            )
             self._update_session_stats_parallel(consolidation_stats)
             
             # Vérifier si la consolidation a réussi
@@ -367,6 +377,24 @@ class ExtractionService:
         st.session_state.extraction_stats['total_hotels'] += consolidation_stats['total_hotels']
         st.session_state.extraction_stats['successful_extractions'] += consolidation_stats['successful_extractions']
         st.session_state.extraction_stats['failed_extractions'] += consolidation_stats['failed_extractions']
+
+    def _update_progressive_display(self, path: str, count: int, stats: Dict[str, Any]):
+        """Met à jour le bouton de téléchargement progressif"""
+        try:
+            with open(path, 'rb') as f:
+                data = f.read()
+            st.session_state.progressive_consolidation_file = data
+            st.session_state.progressive_consolidation_name = os.path.basename(path)
+            st.session_state.progressive_stats = stats
+            label = f"📥 Fichier progressif ({count} hôtels)"
+            self.progressive_placeholder.download_button(
+                label=label,
+                data=data,
+                file_name=st.session_state.progressive_consolidation_name,
+                key=f"progressive_{count}",
+            )
+        except Exception as e:
+            print(f"⚠️ Erreur mise à jour bouton progressif: {e}")
 
 
 class ProgressTracker:
