@@ -112,6 +112,7 @@ class ExtractionService:
             )
         
         # Lancement du traitement parallèle
+        results = []  # Initialiser results pour le finally
         try:
             # Vérifier si Google Maps est configuré
             gmaps_available = extract_gmaps and self._check_gmaps_config()
@@ -180,6 +181,39 @@ class ExtractionService:
             
             # Repli vers le mode séquentiel 
             self._process_csv_sequential(df)
+        
+        finally:
+            # Garantir qu'une consolidation est tentée même en cas d'erreur
+            print("🔧 Consolidation d'urgence si nécessaire...")
+            try:
+                # Si results est vide ou non défini, tenter une récupération
+                if not results:
+                    print("⚠️ Aucun résultat disponible, tentative de récupération...")
+                    results = self._recover_results_from_outputs()
+                
+                # Tenter la consolidation avec les résultats disponibles
+                if results:
+                    consolidation_stats = consolidate_hotel_extractions(
+                        results, 
+                        include_gmaps=extract_gmaps, 
+                        include_website=extract_website
+                    )
+                    
+                    # Afficher les résultats même partiels
+                    if consolidation_stats.get('consolidation_file'):
+                        status_text.success("✅ Fichier consolidé créé (mode récupération)")
+                        ResultsProcessor.display_consolidation_results(consolidation_stats)
+                    else:
+                        self._create_emergency_consolidation_file()
+                        st.warning("⚠️ Consolidation partielle - Vérifiez le dossier outputs/")
+                else:
+                    self._create_emergency_consolidation_file()
+                    st.error("❌ Impossible de récupérer les résultats")
+                    
+            except Exception as consolidation_error:
+                print(f"❌ Échec consolidation d'urgence: {consolidation_error}")
+                st.error(f"❌ Erreur lors de la consolidation d'urgence: {consolidation_error}")
+                st.info("Les fichiers individuels sont disponibles dans outputs/")
     
     def _check_gmaps_config(self) -> bool:
         """Vérifie si Google Maps est configuré
@@ -367,6 +401,104 @@ class ExtractionService:
         st.session_state.extraction_stats['total_hotels'] += consolidation_stats['total_hotels']
         st.session_state.extraction_stats['successful_extractions'] += consolidation_stats['successful_extractions']
         st.session_state.extraction_stats['failed_extractions'] += consolidation_stats['failed_extractions']
+    
+    def _recover_results_from_outputs(self):
+        """Récupère les résultats depuis les fichiers outputs/ existants"""
+        from glob import glob
+        import os
+        from datetime import datetime
+        
+        print("🔧 Tentative de récupération depuis outputs/...")
+        results = []
+        
+        try:
+            # Chercher tous les fichiers CSV récents
+            today = datetime.now().strftime("%Y%m%d")
+            files = glob(f'outputs/salles_*_{today}*.csv')
+            
+            if not files:
+                # Chercher tous les fichiers CSV si aucun du jour
+                files = glob('outputs/salles_*.csv')
+            
+            print(f"📄 {len(files)} fichiers trouvés dans outputs/")
+            
+            for f in files:
+                try:
+                    # Extraire le nom de l'hôtel depuis le nom du fichier
+                    basename = os.path.basename(f)
+                    # Format: salles_grid_NomHotel_20250908_123456.csv
+                    parts = basename.replace('salles_grid_', '').replace('salles_popup_', '').split('_202')
+                    hotel_name = parts[0] if parts else 'Unknown'
+                    
+                    results.append({
+                        'name': hotel_name.replace('_', ' '),
+                        'success': True,
+                        'extraction_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        'cvent_data': {
+                            'data_file': f,
+                            'salles_count': 1,  # Au moins une salle puisque le fichier existe
+                            'interface_type': 'grid' if 'grid' in basename else 'popup',
+                            'headers': [],
+                            'sample_data': []
+                        }
+                    })
+                except Exception as e:
+                    print(f"⚠️ Erreur récupération {f}: {e}")
+                    continue
+            
+            print(f"✅ {len(results)} résultats récupérés")
+            return results
+            
+        except Exception as e:
+            print(f"❌ Erreur récupération outputs: {e}")
+            return []
+    
+    def _create_emergency_consolidation_file(self):
+        """Crée un fichier de consolidation d'urgence minimal"""
+        from datetime import datetime
+        import pandas as pd
+        import os
+        
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            emergency_file = f'outputs/emergency_consolidation_{timestamp}.csv'
+            
+            # Créer un DataFrame minimal avec les informations disponibles
+            data = {
+                'status': ['emergency_consolidation'],
+                'timestamp': [timestamp],
+                'message': ['Consolidation automatique échouée - Vérifiez les fichiers individuels dans outputs/'],
+                'hotels_processed': [st.session_state.extraction_stats.get('total_hotels', 0)],
+                'successful': [st.session_state.extraction_stats.get('successful_extractions', 0)],
+                'failed': [st.session_state.extraction_stats.get('failed_extractions', 0)]
+            }
+            
+            df = pd.DataFrame(data)
+            
+            # Créer le dossier outputs s'il n'existe pas
+            os.makedirs('outputs', exist_ok=True)
+            
+            # Sauvegarder le fichier
+            df.to_csv(emergency_file, index=False)
+            
+            print(f"🚨 Fichier d'urgence créé: {emergency_file}")
+            st.warning(f"📄 Fichier de consolidation d'urgence créé: {os.path.basename(emergency_file)}")
+            
+            # Proposer le téléchargement
+            with open(emergency_file, 'r') as f:
+                st.download_button(
+                    label="📥 Télécharger le fichier d'urgence",
+                    data=f.read(),
+                    file_name=os.path.basename(emergency_file),
+                    mime="text/csv"
+                )
+            
+            return emergency_file
+            
+        except Exception as e:
+            print(f"❌ Impossible de créer le fichier d'urgence: {e}")
+            st.error(f"❌ Impossible de créer le fichier d'urgence: {e}")
+            return None
 
 
 class ProgressTracker:

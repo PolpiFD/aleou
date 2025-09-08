@@ -186,6 +186,11 @@ class ParallelHotelProcessor:
             
             self._running = False
             
+            # Forcer une mise à jour finale après tous les batches
+            if progress_callback:
+                final_stats = self.progress_reporter.get_progress_stats()
+                await self._safe_callback(progress_callback, final_stats)
+            
             # Statistiques finales
             final_stats = self.progress_reporter.get_progress_stats()
             print(f"✅ Traitement terminé: {final_stats['completed']}/{final_stats['total_hotels']} hôtels")
@@ -274,6 +279,11 @@ class ParallelHotelProcessor:
                         self.progress_reporter.update_completed()
                 
                 batch_results = processed_results
+                
+                # Callback de progression après traitement parallèle intra-batch
+                if progress_callback:
+                    stats = self.progress_reporter.get_progress_stats()
+                    await self._safe_callback(progress_callback, stats)
             else:
                 # Mode séquentiel pour petits batches ou extraction simple
                 print(f"   🔄 Mode séquentiel: {len(batch)} hôtel(s)")
