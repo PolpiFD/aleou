@@ -23,7 +23,7 @@ class ParallelConfig:
     batch_size: int = 10  # Nombre d'hôtels par batch
     cvent_timeout: int = 45  # Timeout par hôtel Cvent
     gmaps_timeout: int = 30   # Timeout par hôtel Google Maps
-    website_timeout: int = 60  # Timeout par hôtel Website (plus long car scraping + LLM)
+    website_timeout: int = 120  # Timeout par hôtel Website (Firecrawl + LLM)
     
     @classmethod
     def from_machine_specs(cls, ram_gb: int = 16, cvent_only: bool = False):

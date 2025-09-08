@@ -82,15 +82,15 @@ class HotelFirecrawlSchema(BaseModel):
 class FirecrawlConfig:
     """Configuration pour Firecrawl"""
     api_key: str
-    batch_size: int = 20  # Batch size optimisé pour 100 req/min
-    max_concurrent_batches: int = 5  # Plus de batches concurrents
-    timeout: int = 120
+    batch_size: int = 10  # Batch plus petit pour latence réduite
+    max_concurrent_batches: int = 8  # Plus de batches concurrents
+    timeout: int = 90  # Timeout réduit pour forcer plus de rapidité
     formats: List[str] = None
     only_main_content: bool = True
     include_tags: List[str] = None
     exclude_tags: List[str] = None
     rate_limit_requests_per_minute: int = 100  # Plan supérieur = 100 req/min
-    rate_limit_wait_seconds: int = 15  # Attendre seulement 15s entre batches
+    rate_limit_wait_seconds: int = 8  # Attente très réduite
     
     def __post_init__(self):
         if self.formats is None:
