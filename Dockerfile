@@ -22,7 +22,21 @@ RUN apt-get update && apt-get install -y \
 # Install Playwright dependencies
 RUN pip install --no-cache-dir playwright==1.54.0
 RUN playwright install chromium
-RUN playwright install-deps chromium
+
+# Install Playwright system dependencies with fallback for font packages
+RUN playwright install-deps chromium || \
+    (apt-get update && apt-get install -y \
+        fonts-unifont \
+        fonts-ubuntu \
+        libasound2 \
+        libatk-bridge2.0-0 \
+        libdrm2 \
+        libxkbcommon0 \
+        libxrandr2 \
+        libxss1 \
+        libxtst6 \
+        xvfb \
+        && rm -rf /var/lib/apt/lists/*)
 
 # Copy requirements first for better Docker layer caching
 COPY requirements.txt .
