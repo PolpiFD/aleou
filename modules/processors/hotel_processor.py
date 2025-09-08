@@ -155,7 +155,7 @@ class HotelProcessor:
             
             website_call = extract_hotels_websites_batch([website_hotel_data])
             if asyncio.iscoroutine(website_call):
-                website_results = await asyncio.wait_for(website_call, timeout=60)
+                website_results = await asyncio.wait_for(website_call, timeout=120)
             else:
                 website_results = website_call
             self.stats['website_time'] = time.time() - start_time

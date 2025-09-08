@@ -89,8 +89,8 @@ class FirecrawlConfig:
     only_main_content: bool = True
     include_tags: List[str] = None
     exclude_tags: List[str] = None
-    rate_limit_requests_per_minute: int = 10  # Plan gratuit = 10 req/min
-    rate_limit_wait_seconds: int = 65  # Attendre 65s après chaque batch de 10
+    rate_limit_requests_per_minute: int = 100  # Plan payant = 100 req/min  
+    rate_limit_wait_seconds: int = 1  # 100 req/min = 0.6s, on met 1s sécurité
     
     def __post_init__(self):
         if self.formats is None:
@@ -115,8 +115,8 @@ class FirecrawlExtractor:
         # Configuration
         self.config = config or FirecrawlConfig(
             api_key=os.getenv('FIRECRAWL_API_KEY', ''),
-            rate_limit_requests_per_minute=int(os.getenv('FIRECRAWL_RATE_LIMIT', '10')),
-            rate_limit_wait_seconds=int(os.getenv('FIRECRAWL_WAIT_SECONDS', '65'))
+            rate_limit_requests_per_minute=int(os.getenv('FIRECRAWL_RATE_LIMIT', '100')),
+            rate_limit_wait_seconds=int(os.getenv('FIRECRAWL_WAIT_SECONDS', '1'))
         )
         
         if not self.config.api_key:
@@ -676,8 +676,8 @@ async def extract_hotels_with_firecrawl(hotels_data: List[Dict[str, Any]],
     
     config = FirecrawlConfig(
         api_key=os.getenv('FIRECRAWL_API_KEY', ''),
-        rate_limit_requests_per_minute=int(os.getenv('FIRECRAWL_RATE_LIMIT', '10')),
-        rate_limit_wait_seconds=int(os.getenv('FIRECRAWL_WAIT_SECONDS', '65'))
+        rate_limit_requests_per_minute=int(os.getenv('FIRECRAWL_RATE_LIMIT', '100')),
+        rate_limit_wait_seconds=int(os.getenv('FIRECRAWL_WAIT_SECONDS', '1'))
     )
     
     async with FirecrawlExtractor(config) as extractor:

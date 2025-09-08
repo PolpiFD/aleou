@@ -51,8 +51,8 @@ class WebsiteProcessor:
             try:
                 firecrawl_config = FirecrawlConfig(
                     api_key=self.config.firecrawl_api_key,
-                    rate_limit_requests_per_minute=10,  # Plan gratuit
-                    rate_limit_wait_seconds=65,  # Sécurité 65s
+                    rate_limit_requests_per_minute=100,  # Plan payant
+                    rate_limit_wait_seconds=1,  # Sécurité 1s
                     timeout=self.config.timeout
                 )
                 self.firecrawl_available = True
@@ -135,8 +135,8 @@ class WebsiteProcessor:
         try:
             firecrawl_config = FirecrawlConfig(
                 api_key=self.config.firecrawl_api_key,
-                rate_limit_requests_per_minute=10,  # Plan gratuit
-                rate_limit_wait_seconds=65,  # Sécurité 65s
+                rate_limit_requests_per_minute=100,  # Plan payant
+                rate_limit_wait_seconds=1,  # Sécurité 1s
                 timeout=self.config.timeout
             )
             
