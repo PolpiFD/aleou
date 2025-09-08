@@ -507,15 +507,15 @@ class ParallelHotelProcessor:
         from .website_extractor import WebsiteExtractor
         
         try:
-            extractor = WebsiteExtractor()
-            result = await asyncio.wait_for(
-                extractor.extract_hotel_website_data(
-                    website_data['name'],
-                    website_data.get('address', ''),
-                    website_data.get('gmaps_website')
-                ),
-                timeout=self.config.website_timeout
-            )
+            async with WebsiteExtractor() as extractor:
+                result = await asyncio.wait_for(
+                    extractor.extract_hotel_website_data(
+                        website_data['name'],
+                        website_data.get('address', ''),
+                        website_data.get('gmaps_website')
+                    ),
+                    timeout=self.config.website_timeout
+                )
             
             self.progress_reporter.update_website_progress(result.get('success', False))
             return result

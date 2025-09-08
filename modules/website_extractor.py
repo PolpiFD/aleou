@@ -27,6 +27,16 @@ class WebsiteExtractor:
         # Session aiohttp pour fallback simple
         self.session = None
     
+    async def __aenter__(self):
+        """Context manager entry"""
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - fermer la session aiohttp"""
+        if self.session:
+            await self.session.close()
+            self.session = None
+    
     async def extract_hotel_website_data(self, hotel_name: str, hotel_address: str, 
                                        gmaps_website: str = None) -> Dict[str, Any]:
         """Extrait les données complètes d'un site web d'hôtel
@@ -370,8 +380,8 @@ async def extract_single_hotel_website(hotel_name: str, hotel_address: str,
         Dict[str, Any]: Résultat d'extraction
     """
     
-    extractor = WebsiteExtractor()
-    return await extractor.extract_hotel_website_data(hotel_name, hotel_address, gmaps_website)
+    async with WebsiteExtractor() as extractor:
+        return await extractor.extract_hotel_website_data(hotel_name, hotel_address, gmaps_website)
 
 
 async def extract_hotels_websites_batch(hotels_info: List[Dict[str, str]]) -> List[Dict[str, Any]]:
@@ -456,6 +466,6 @@ async def extract_hotels_websites_batch(hotels_info: List[Dict[str, str]]) -> Li
         print(f"❌ Erreur extraction batch: {e}")
         # Fallback vers l'ancien système
         print("🔄 Fallback vers l'ancien système...")
-        extractor = WebsiteExtractor()
-        results = await extractor.extract_hotels_batch(hotels_info)
-        return format_website_data_for_consolidation(results)
+        async with WebsiteExtractor() as extractor:
+            results = await extractor.extract_hotels_batch(hotels_info)
+            return format_website_data_for_consolidation(results)

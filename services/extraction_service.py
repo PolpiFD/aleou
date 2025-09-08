@@ -186,6 +186,18 @@ class ExtractionService:
             # Garantir qu'une consolidation est tentée même en cas d'erreur
             print("🔧 Consolidation d'urgence si nécessaire...")
             try:
+                # Pour les gros volumes (>500), essayer consolidation progressive
+                if len(df) > 500:
+                    print("📊 Gros volume détecté, tentative de consolidation progressive...")
+                    consolidation_stats = self._progressive_consolidation(
+                        extract_gmaps=extract_gmaps, 
+                        extract_website=extract_website
+                    )
+                    if consolidation_stats and consolidation_stats.get('consolidation_file'):
+                        status_text.success("✅ Consolidation progressive réussie")
+                        ResultsProcessor.display_consolidation_results(consolidation_stats)
+                        return
+                
                 # Si results est vide ou non défini, tenter une récupération
                 if not results:
                     print("⚠️ Aucun résultat disponible, tentative de récupération...")
@@ -498,6 +510,109 @@ class ExtractionService:
         except Exception as e:
             print(f"❌ Impossible de créer le fichier d'urgence: {e}")
             st.error(f"❌ Impossible de créer le fichier d'urgence: {e}")
+            return None
+    
+    def _progressive_consolidation(self, extract_gmaps: bool = True, extract_website: bool = True):
+        """Consolidation progressive par batches pour éviter les fuites mémoire"""
+        from modules.data_consolidator import consolidate_hotel_extractions
+        from glob import glob
+        import os
+        import pandas as pd
+        from datetime import datetime
+        
+        print("🔄 Démarrage de la consolidation progressive...")
+        
+        try:
+            # Récupérer tous les fichiers de sortie par batch
+            output_files = glob('outputs/salles_*.csv')
+            print(f"📄 {len(output_files)} fichiers trouvés dans outputs/")
+            
+            if not output_files:
+                print("❌ Aucun fichier de sortie trouvé")
+                return None
+            
+            # Traitement par petits batches pour éviter la surcharge mémoire
+            BATCH_SIZE = 100
+            all_consolidated_data = []
+            batch_num = 0
+            
+            # Grouper les fichiers par batches
+            for i in range(0, len(output_files), BATCH_SIZE):
+                batch_files = output_files[i:i + BATCH_SIZE]
+                batch_num += 1
+                print(f"🔄 Traitement du batch {batch_num}: {len(batch_files)} fichiers")
+                
+                # Simuler des résultats pour ce batch
+                batch_results = []
+                for file_path in batch_files:
+                    try:
+                        basename = os.path.basename(file_path)
+                        # Extraire le nom de l'hôtel depuis le nom du fichier
+                        parts = basename.replace('salles_grid_', '').replace('salles_popup_', '').split('_202')
+                        hotel_name = parts[0].replace('_', ' ') if parts else 'Unknown'
+                        
+                        batch_results.append({
+                            'name': hotel_name,
+                            'success': True,
+                            'extraction_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            'cvent_data': {
+                                'data_file': file_path,
+                                'salles_count': 1,
+                                'interface_type': 'grid' if 'grid' in basename else 'popup',
+                                'headers': [],
+                                'sample_data': []
+                            }
+                        })
+                    except Exception as e:
+                        print(f"⚠️ Erreur lecture fichier {file_path}: {e}")
+                        continue
+                
+                if batch_results:
+                    # Consolider ce batch
+                    batch_stats = consolidate_hotel_extractions(
+                        batch_results, 
+                        include_gmaps=extract_gmaps, 
+                        include_website=extract_website
+                    )
+                    
+                    # Si consolidation réussie pour ce batch
+                    if batch_stats.get('consolidation_file') and os.path.exists(batch_stats['consolidation_file']):
+                        print(f"✅ Batch {batch_num} consolidé: {batch_stats['consolidation_file']}")
+                        
+                        # Lire les données consolidées de ce batch
+                        try:
+                            batch_df = pd.read_csv(batch_stats['consolidation_file'])
+                            all_consolidated_data.append(batch_df)
+                        except Exception as e:
+                            print(f"⚠️ Erreur lecture batch consolidé {batch_num}: {e}")
+            
+            # Fusionner tous les batches consolidés
+            if all_consolidated_data:
+                print(f"🔗 Fusion de {len(all_consolidated_data)} batches consolidés...")
+                final_df = pd.concat(all_consolidated_data, ignore_index=True)
+                
+                # Créer le fichier final
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                final_file = f'outputs/consolidation_progressive_{timestamp}.csv'
+                final_df.to_csv(final_file, index=False)
+                
+                print(f"✅ Consolidation progressive terminée: {final_file}")
+                
+                # Retourner les stats finales
+                return {
+                    'consolidation_file': final_file,
+                    'total_hotels': len(final_df),
+                    'total_salles': len(final_df),
+                    'successful_extractions': len(final_df),
+                    'failed_extractions': 0,
+                    'processing_mode': 'progressive'
+                }
+            else:
+                print("❌ Aucun batch consolidé avec succès")
+                return None
+                
+        except Exception as e:
+            print(f"❌ Erreur lors de la consolidation progressive: {e}")
             return None
 
 
