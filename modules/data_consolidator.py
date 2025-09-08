@@ -43,177 +43,195 @@ def consolidate_hotel_extractions(extraction_results: List[Dict], output_dir: st
         'consolidation_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     
-    # Données consolidées
-    consolidated_data = []
-    
+    # Préparer les headers disponibles
+    base_headers = [
+        'hotel_name',
+        'hotel_address',
+        'extraction_date',
+        'cvent_url',
+        'cvent_interface_type'
+    ]
+    all_headers = set(base_headers)
+
+    # Pré-scan des résultats pour collecter tous les headers nécessaires
     for result in extraction_results:
-        hotel_name = result.get('name', 'Hotel_Unknown')
-        hotel_address = result.get('address', '')
-        
-        # Vérifier si au moins une extraction a réussi (Cvent, Google Maps ou Website)
+        if include_gmaps and result.get('gmaps_data'):
+            all_headers.update([
+                'gmaps_sharable_link', 'gmaps_name', 'gmaps_is_closed', 'gmaps_website',
+                'gmaps_category', 'gmaps_address', 'gmaps_region', 'gmaps_rating',
+                'gmaps_review_count', 'gmaps_phone', 'gmaps_image_url', 'gmaps_opening_hours'
+            ])
+
+        if include_website and result.get('website_data'):
+            all_headers.update([
+                'website_url', 'website_source', 'website_title', 'website_description',
+                'website_phone', 'website_email', 'website_opening_hours', 'website_price_range',
+                'website_photos_urls', 'website_photos_count', 'website_capacite_max',
+                'website_nombre_chambre', 'website_nombre_chambre_twin', 'website_nombre_etoile',
+                'website_pr_amphi', 'website_pr_hotel', 'website_pr_acces_facile', 'website_pr_banquet',
+                'website_pr_contact', 'website_pr_room_nb', 'website_pr_lieu_atypique', 'website_pr_nature',
+                'website_pr_mer', 'website_pr_montagne', 'website_pr_centre_ville', 'website_pr_parking',
+                'website_pr_restaurant', 'website_pr_piscine', 'website_pr_spa', 'website_pr_wifi',
+                'website_pr_sun', 'website_pr_contemporaine', 'website_pr_acces_pmr', 'website_pr_visio',
+                'website_pr_eco_label', 'website_pr_rooftop', 'website_pr_esat', 'website_summary',
+                'website_meeting_rooms_available', 'website_meeting_rooms_count',
+                'website_largest_room_capacity', 'website_content_length', 'website_images_found',
+                'website_fields_extracted', 'website_extraction_method'
+            ])
+
         cvent_result = result.get('cvent_data')
-        has_cvent_data = (cvent_result is not None and 
-                         cvent_result.get('salles_count', 0) > 0)
-        
-        has_gmaps_data = result.get('gmaps_data') is not None and result.get('gmaps_data', {}).get('extraction_status') == 'success'
-        
-        has_website_data = (result.get('website_data') is not None and 
-                           isinstance(result.get('website_data'), dict) and
-                           len(result.get('website_data', {})) > 0)
-        
-        if has_cvent_data or has_gmaps_data or has_website_data:
-            stats['successful_extractions'] += 1
-            
-            # Traitement des données Cvent (salles de réunion)
-            if has_cvent_data:
-                cvent_data = result['cvent_data']
-                headers = cvent_data.get('headers', [])
-                rows = cvent_data.get('sample_data', [])  # On va charger toutes les données, pas juste sample
-                
-                # Charger les données complètes depuis le fichier CSV
-                data_file = cvent_data.get('data_file')
+        if cvent_result:
+            headers = cvent_result.get('headers', [])
+            data_file = cvent_result.get('data_file')
+            if data_file and os.path.exists(data_file):
+                try:
+                    encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
+                    df_headers = None
+                    for encoding in encodings:
+                        try:
+                            df_headers = pd.read_csv(data_file, encoding=encoding, nrows=0)
+                            break
+                        except UnicodeDecodeError:
+                            continue
+                    if df_headers is not None:
+                        headers = df_headers.columns.tolist()
+                except Exception:
+                    pass
+            for header in headers:
+                all_headers.add(clean_header_name(header))
+
+    # 🔧 FILTRAGE - Supprimer les colonnes non désirées
+    columns_to_remove = [
+        'gmaps_is_closed',
+        'cvent_interface_type',
+        'website_description',
+        'website_content_length',
+        'website_fields_extracted',
+        'website_extraction_method',
+        'website_meeting_rooms_available',
+        'website_images_found',
+        'website_meeting_rooms_count'
+    ]
+    for col in columns_to_remove:
+        all_headers.discard(col)
+
+    fieldnames = list(all_headers)
+    stats['unique_headers'] = set(fieldnames)
+
+    rows_written = 0
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    consolidation_filename = f"hotels_consolidation_{timestamp}.csv"
+    consolidation_path = os.path.join(output_dir, consolidation_filename)
+
+    with open(consolidation_path, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        stats['consolidation_file'] = consolidation_path
+
+        for result in extraction_results:
+            hotel_name = result.get('name', 'Hotel_Unknown')
+            hotel_address = result.get('address', '')
+
+            cvent_result = result.get('cvent_data')
+            has_cvent_data = (cvent_result is not None and
+                             cvent_result.get('salles_count', 0) > 0)
+            has_gmaps_data = result.get('gmaps_data') is not None and result.get('gmaps_data', {}).get('extraction_status') == 'success'
+            has_website_data = (result.get('website_data') is not None and
+                               isinstance(result.get('website_data'), dict) and
+                               len(result.get('website_data', {})) > 0)
+
+            if has_cvent_data or has_gmaps_data or has_website_data:
+                stats['successful_extractions'] += 1
+
+                if has_cvent_data:
+                    cvent_data = result['cvent_data']
+                    headers = cvent_data.get('headers', [])
+                    rows = cvent_data.get('sample_data', [])
+                    data_file = cvent_data.get('data_file')
                 if data_file and os.path.exists(data_file):
                     try:
-                        # Essayer différents encodages
                         encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
                         df_hotel = None
-                        
                         for encoding in encodings:
                             try:
                                 df_hotel = pd.read_csv(data_file, encoding=encoding)
                                 break
                             except UnicodeDecodeError:
                                 continue
-                        
                         if df_hotel is None:
                             raise ValueError(f"Impossible de décoder le fichier {data_file}")
-                        
                         headers = df_hotel.columns.tolist()
                         rows = df_hotel.values.tolist()
                         print(f"✅ {hotel_name}: {len(rows)} salles chargées depuis {os.path.basename(data_file)}")
                     except Exception as e:
                         print(f"⚠️ Erreur lecture {data_file}: {e}")
-                        # Utiliser les données sample en fallback
-                
-                # Ajouter les métadonnées d'hôtel à chaque ligne de salle
+
                 for row in rows:
                     if isinstance(row, list) and len(row) > 0:
                         consolidated_row = create_base_hotel_row(hotel_name, hotel_address, result)
-                        
-                        # Ajouter toutes les données de la salle Cvent
                         for i, header in enumerate(headers):
                             if i < len(row):
-                                clean_header = clean_header_name(header)
-                                consolidated_row[clean_header] = row[i]
-                                stats['unique_headers'].add(clean_header)
-                        
-                        # Ajouter les données Google Maps si disponibles
+                                consolidated_row[clean_header_name(header)] = row[i]
                         if has_gmaps_data and include_gmaps:
-                            gmaps_data = result['gmaps_data']
-                            add_gmaps_data_to_row(consolidated_row, gmaps_data, stats)
-                        
-                        # Ajouter les données Website si disponibles
+                            add_gmaps_data_to_row(consolidated_row, result['gmaps_data'], stats)
                         if has_website_data and include_website:
-                            website_data = result['website_data']
-                            add_website_data_to_row(consolidated_row, website_data, stats)
-                        
-                        consolidated_data.append(consolidated_row)
+                            add_website_data_to_row(consolidated_row, result['website_data'], stats)
+                        writer.writerow({k: consolidated_row.get(k, '') for k in fieldnames})
+                        rows_written += 1
                         stats['total_rooms'] += 1
-                
+                        if len(stats['preview_data']) < 10:
+                            stats['preview_data'].append(dict(consolidated_row))
+
                 stats['hotels_with_data'].append({
                     'name': hotel_name,
                     'rooms_count': len(rows),
                     'interface_type': cvent_data.get('interface_type', ''),
                     'file': os.path.basename(cvent_data.get('data_file', '')) if cvent_data.get('data_file') else 'no_csv'
                 })
-            
-            # Si seulement Google Maps et/ou Website est disponible (pas de salles)
+
             elif (has_gmaps_data and include_gmaps) or (has_website_data and include_website):
                 consolidated_row = create_base_hotel_row(hotel_name, hotel_address, result)
-                
-                # Ajouter Google Maps data si disponible
                 if has_gmaps_data and include_gmaps:
-                    gmaps_data = result['gmaps_data']
-                    add_gmaps_data_to_row(consolidated_row, gmaps_data, stats)
-                
-                # Ajouter Website data si disponible
+                    add_gmaps_data_to_row(consolidated_row, result['gmaps_data'], stats)
                 if has_website_data and include_website:
-                    website_data = result['website_data']
-                    add_website_data_to_row(consolidated_row, website_data, stats)
-                
-                consolidated_data.append(consolidated_row)
-                
-                # Déterminer le type d'interface
+                    add_website_data_to_row(consolidated_row, result['website_data'], stats)
+                writer.writerow({k: consolidated_row.get(k, '') for k in fieldnames})
+                rows_written += 1
+                if len(stats['preview_data']) < 10:
+                    stats['preview_data'].append(dict(consolidated_row))
+
                 interface_types = []
                 if has_gmaps_data and include_gmaps:
                     interface_types.append('gmaps')
                 if has_website_data and include_website:
                     interface_types.append('website')
-                
+
                 stats['hotels_with_data'].append({
                     'name': hotel_name,
                     'rooms_count': 0,
                     'interface_type': '_'.join(interface_types) + '_only',
                     'file': '_'.join(interface_types) + '_data'
                 })
-            
-        else:
-            stats['failed_extractions'] += 1
-            stats['failed_hotels'].append({
-                'name': hotel_name,
-                'address': hotel_address,
-                'error': result.get('error', 'Erreur inconnue')
-            })
-    
-    # Créer le CSV consolidé
-    if consolidated_data:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        consolidation_filename = f"hotels_consolidation_{timestamp}.csv"
-        consolidation_path = os.path.join(output_dir, consolidation_filename)
-        
-        # Créer le DataFrame
-        df_consolidated = pd.DataFrame(consolidated_data)
-        
-        # 🔧 CORRECTION - Réorganiser colonnes + gérer doublons
-        df_consolidated = organize_columns_and_clean_duplicates(df_consolidated)
-        
-        # 🔧 NOUVEAU - Nettoyer les types pour éviter l'erreur PyArrow
-        df_consolidated = clean_data_types_for_display(df_consolidated)
-        
-        # 🔧 FILTRAGE - Supprimer les colonnes non désirées
-        columns_to_remove = [
-            'gmaps_is_closed',
-            'cvent_interface_type', 
-            'website_description',
-            'website_content_length',
-            'website_fields_extracted',
-            'website_extraction_method',
-            'website_meeting_rooms_available',
-            'website_images_found',
-            'website_meeting_rooms_count'
-        ]
-        
-        # Supprimer uniquement les colonnes qui existent
-        existing_columns_to_remove = [col for col in columns_to_remove if col in df_consolidated.columns]
-        if existing_columns_to_remove:
-            print(f"🔧 Suppression des colonnes non désirées: {existing_columns_to_remove}")
-            df_consolidated = df_consolidated.drop(columns=existing_columns_to_remove)
-        
-        # Sauvegarder
-        df_consolidated.to_csv(consolidation_path, index=False, encoding='utf-8')
-        
-        stats['consolidation_file'] = consolidation_path
-        stats['preview_data'] = df_consolidated.head(10).to_dict('records')
-        
-        print(f"✅ Consolidation terminée: {len(consolidated_data)} salles de {stats['successful_extractions']} hôtels")
+
+            else:
+                stats['failed_extractions'] += 1
+                stats['failed_hotels'].append({
+                    'name': hotel_name,
+                    'address': hotel_address,
+                    'error': result.get('error', 'Erreur inconnue')
+                })
+
+    if rows_written > 0:
+        stats['unique_headers'] = set(fieldnames)
+        print(f"✅ Consolidation terminée: {rows_written} lignes écrites")
         print(f"📄 Fichier consolidé: {consolidation_filename}")
-        
-        # Créer aussi un fichier de statistiques
         create_stats_file(stats, output_dir, timestamp)
-        
     else:
         print("❌ Aucune donnée à consolider")
-    
+        stats['consolidation_file'] = None
+        if os.path.exists(consolidation_path):
+            os.remove(consolidation_path)
+
     return stats
 
 
