@@ -491,15 +491,58 @@ class DatabaseService:
             'session_id': hotel.get('session_id', ''),
         }
 
-        # Ajouter données Google Maps si disponibles
-        row.update({
-            'gmaps_name': hotel.get('gmaps_name', ''),
-            'gmaps_address': hotel.get('gmaps_address', ''),
-            'gmaps_phone': hotel.get('gmaps_phone', ''),
-            'gmaps_rating': hotel.get('gmaps_rating', ''),
-            'gmaps_website': hotel.get('gmaps_website', ''),
-            'official_website': hotel.get('official_website', ''),
-        })
+        # Récupérer et ajouter données Google Maps si disponibles
+        try:
+            gmaps_data = self.client.client.table("hotel_gmaps_data").select("*").eq("hotel_id", hotel['id']).execute()
+            if gmaps_data.data:
+                gmaps_row = gmaps_data.data[0]
+                row.update({
+                    'gmaps_name': gmaps_row.get('gmaps_name', ''),
+                    'gmaps_address': gmaps_row.get('gmaps_address', ''),
+                    'gmaps_phone': gmaps_row.get('gmaps_phone', ''),
+                    'gmaps_rating': gmaps_row.get('gmaps_rating', ''),
+                    'gmaps_website': gmaps_row.get('gmaps_website', ''),
+                })
+            else:
+                row.update({
+                    'gmaps_name': '', 'gmaps_address': '', 'gmaps_phone': '',
+                    'gmaps_rating': '', 'gmaps_website': ''
+                })
+        except:
+            row.update({
+                'gmaps_name': '', 'gmaps_address': '', 'gmaps_phone': '',
+                'gmaps_rating': '', 'gmaps_website': ''
+            })
+
+        # Récupérer et ajouter données Website/LLM si disponibles
+        try:
+            website_data = self.client.client.table("hotel_website_data").select("*").eq("hotel_id", hotel['id']).execute()
+            if website_data.data:
+                website_row = website_data.data[0]
+                row.update({
+                    'website_url': website_row.get('website_url', ''),
+                    'website_phone': website_row.get('website_phone', ''),
+                    'website_email': website_row.get('website_email', ''),
+                    'price_range': website_row.get('price_range', ''),
+                    'nombre_chambre': website_row.get('nombre_chambre', ''),
+                    'nombre_etoile': website_row.get('nombre_etoile', ''),
+                    'parking': website_row.get('pr_parking', ''),
+                    'restaurant': website_row.get('pr_restaurant', ''),
+                    'spa': website_row.get('pr_spa', ''),
+                    'wifi': website_row.get('pr_wifi', ''),
+                })
+            else:
+                row.update({
+                    'website_url': '', 'website_phone': '', 'website_email': '',
+                    'price_range': '', 'nombre_chambre': '', 'nombre_etoile': '',
+                    'parking': '', 'restaurant': '', 'spa': '', 'wifi': ''
+                })
+        except:
+            row.update({
+                'website_url': '', 'website_phone': '', 'website_email': '',
+                'price_range': '', 'nombre_chambre': '', 'nombre_etoile': '',
+                'parking': '', 'restaurant': '', 'spa': '', 'wifi': ''
+            })
 
         # Données de la salle si disponible
         if room:
@@ -533,8 +576,9 @@ class DatabaseService:
         headers = [
             'hotel_name', 'hotel_address', 'cvent_url', 'extraction_date',
             'interface_type', 'extraction_status', 'session_id',
-            'gmaps_name', 'gmaps_address', 'gmaps_phone', 'gmaps_rating',
-            'gmaps_website', 'official_website',
+            'gmaps_name', 'gmaps_address', 'gmaps_phone', 'gmaps_rating', 'gmaps_website',
+            'website_url', 'website_phone', 'website_email', 'price_range',
+            'nombre_chambre', 'nombre_etoile', 'parking', 'restaurant', 'spa', 'wifi',
             'nom_salle', 'surface', 'capacite_theatre', 'capacite_classe',
             'capacite_banquet', 'capacite_cocktail', 'capacite_u', 'capacite_amphi'
         ]
@@ -555,7 +599,9 @@ class DatabaseService:
             'extraction_status': 'error',
             'session_id': '',
             'gmaps_name': '', 'gmaps_address': '', 'gmaps_phone': '',
-            'gmaps_rating': '', 'gmaps_website': '', 'official_website': '',
+            'gmaps_rating': '', 'gmaps_website': '',
+            'website_url': '', 'website_phone': '', 'website_email': '', 'price_range': '',
+            'nombre_chambre': '', 'nombre_etoile': '', 'parking': '', 'restaurant': '', 'spa': '', 'wifi': '',
             'nom_salle': '', 'surface': '', 'capacite_theatre': '',
             'capacite_classe': '', 'capacite_banquet': '', 'capacite_cocktail': '',
             'capacite_u': '', 'capacite_amphi': ''

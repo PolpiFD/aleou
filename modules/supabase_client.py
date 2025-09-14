@@ -302,21 +302,64 @@ class SupabaseClient:
 
         Args:
             hotel_id: ID de l'hôtel
-            website_data: Données website extraites
+            website_data: Données website extraites depuis Firecrawl/LLM
         """
         # Commencer avec l'ID de l'hôtel
         cleaned_data = {"hotel_id": hotel_id}
 
-        # Ajouter uniquement les champs non-null
-        for key, value in website_data.items():
-            if value is not None and value != "" and value != []:
-                # Gérer le cas spécial de photos_urls (array)
-                if key == "photos_urls" and isinstance(value, list):
-                    cleaned_data[key] = value
-                else:
-                    cleaned_data[key] = value
+        # Mapping des champs selon le schéma SQL fourni
+        field_mapping = {
+            # Corrections des noms de colonnes problématiques
+            'source': 'website_source',
+            'hotel_website_title': 'website_title',
+            'hotel_email': 'website_email',
+            # Champs directs (même nom)
+            'website_url': 'website_url',
+            'website_description': 'website_description',
+            'extraction_method': 'extraction_method',
+            'website_phone': 'website_phone',
+            'opening_hours': 'opening_hours',
+            'price_range': 'price_range',
+            'photos_urls': 'photos_urls',
+            'photos_count': 'photos_count',
+            'capacite_max': 'capacite_max',
+            'nombre_chambre': 'nombre_chambre',
+            'nombre_chambre_twin': 'nombre_chambre_twin',
+            'nombre_etoile': 'nombre_etoile',
+            'meeting_rooms_available': 'meeting_rooms_available',
+            'meeting_rooms_count': 'meeting_rooms_count',
+            'largest_room_capacity': 'largest_room_capacity',
+            'summary': 'summary',
+            'content_length': 'content_length',
+            'images_found': 'images_found',
+            'llm_fields_extracted': 'llm_fields_extracted'
+        }
 
-        self.client.table("hotel_website_data").insert(cleaned_data).execute()
+        # Ajouter tous les champs PR boolean
+        pr_fields = [
+            'pr_amphi', 'pr_hotel', 'pr_acces_facile', 'pr_banquet', 'pr_contact',
+            'pr_room_nb', 'pr_lieu_atypique', 'pr_nature', 'pr_mer', 'pr_montagne',
+            'pr_centre_ville', 'pr_parking', 'pr_restaurant', 'pr_piscine', 'pr_spa',
+            'pr_wifi', 'pr_sun', 'pr_contemporaine', 'pr_acces_pmr', 'pr_visio',
+            'pr_eco_label', 'pr_rooftop', 'pr_esat'
+        ]
+        for field in pr_fields:
+            field_mapping[field] = field
+
+        # Mapper les données reçues vers les colonnes DB
+        for original_key, value in website_data.items():
+            if value is not None and value != "" and value != []:
+                # Obtenir le nom de colonne DB correct
+                db_column = field_mapping.get(original_key)
+                if db_column:
+                    if db_column == "photos_urls" and isinstance(value, list):
+                        cleaned_data[db_column] = value
+                    else:
+                        cleaned_data[db_column] = value
+
+        # Insérer seulement si on a des données utiles
+        if len(cleaned_data) > 1:  # Plus que juste hotel_id
+            self.client.table("hotel_website_data").insert(cleaned_data).execute()
 
     # ============ Query Methods ============
 
@@ -411,9 +454,14 @@ class SupabaseClient:
             if gmaps_data:
                 self.insert_gmaps_data(hotel_id, gmaps_data)
 
-            # 4. Insérer les données website si disponibles
+            # 4. Insérer les données website si disponibles (NON-BLOQUANT)
             if website_data:
-                self.insert_website_data(hotel_id, website_data)
+                try:
+                    self.insert_website_data(hotel_id, website_data)
+                except Exception as website_error:
+                    # Ne pas faire échouer la transaction complète pour website
+                    print(f"⚠️ Échec insertion website (non critique): {website_error}")
+                    # Continuer avec le reste de la transaction
 
             return True
 

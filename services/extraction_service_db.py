@@ -287,36 +287,33 @@ class ExtractionServiceDB:
                     else:
                         st.info("⏳ En cours...")
 
-                # Bouton de téléchargement
+                # Section de téléchargement immédiat
                 if export_stats.get('total_rooms', 0) > 0:
-                    # Générer le nom de fichier
-                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    filename = f"extraction_partielle_{timestamp}.csv"
+                    # Générer le CSV à chaque mise à jour
+                    try:
+                        csv_content = self.db_service.export_session_to_csv(
+                            session_id=self.session_id,
+                            include_empty_rooms=True
+                        )
 
-                    # Générer le CSV en temps réel
-                    if st.button(
-                        f"📥 Télécharger CSV ({export_stats['total_rooms']} salles)",
-                        key=f"download_csv_{stats.get('completed', 0)}",
-                        type="secondary",
-                        use_container_width=True
-                    ):
-                        with st.spinner("Génération du CSV..."):
-                            csv_content = self.db_service.export_session_to_csv(
-                                session_id=self.session_id,
-                                include_empty_rooms=True
-                            )
+                        # Générer le nom de fichier unique
+                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        filename = f"extraction_partielle_{timestamp}.csv"
 
-                            # Afficher bouton de téléchargement
-                            st.download_button(
-                                label="💾 Sauvegarder le fichier CSV",
-                                data=csv_content,
-                                file_name=filename,
-                                mime="text/csv",
-                                type="primary",
-                                use_container_width=True
-                            )
+                        # Bouton de téléchargement direct (compatible Streamlit)
+                        st.download_button(
+                            label=f"📥 Télécharger CSV ({export_stats['total_rooms']} salles)",
+                            data=csv_content,
+                            file_name=filename,
+                            mime="text/csv",
+                            type="secondary",
+                            use_container_width=True,
+                            key=f"download_csv_{stats.get('completed', 0)}"
+                        )
 
-                            st.success(f"✅ CSV généré avec {export_stats['total_rooms']} salles")
+                    except Exception as e:
+                        st.error(f"Erreur génération CSV: {e}")
+                        st.info("ℹ️ Réessayez dans quelques instants")
                 else:
                     st.info("ℹ️ Aucune donnée disponible pour le téléchargement pour le moment")
 
@@ -400,21 +397,21 @@ class ExtractionServiceDB:
         col1, col2 = st.columns(2)
 
         with col1:
-            if st.button("📊 Exporter les hôtels (CSV)", use_container_width=True):
-                self._export_hotels_csv()
+            if st.button("📊 Export Complet (Cvent + Google Maps + Website)", use_container_width=True):
+                self._export_complete_csv()
 
         with col2:
-            if st.button("🏢 Exporter les salles (CSV)", use_container_width=True):
-                self._export_rooms_csv()
+            if st.button("🏢 Export Salles Uniquement", use_container_width=True):
+                self._export_rooms_only_csv()
 
-    def _export_hotels_csv(self):
-        """Exporte les hôtels en CSV depuis Supabase"""
+    def _export_complete_csv(self):
+        """Exporte le CSV complet avec toutes les données consolidées"""
         if not self.session_id:
             st.error("❌ Aucune session active")
             return
 
         try:
-            with st.spinner("Génération du CSV des hôtels..."):
+            with st.spinner("Génération du CSV complet (Cvent + Google Maps + Website)..."):
                 csv_content = self.db_service.export_session_to_csv(
                     session_id=self.session_id,
                     include_empty_rooms=True
@@ -422,10 +419,10 @@ class ExtractionServiceDB:
 
                 # Générer nom de fichier
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                filename = f"hotels_complet_{timestamp}.csv"
+                filename = f"extraction_complete_{timestamp}.csv"
 
                 st.download_button(
-                    label="📥 Télécharger CSV des hôtels",
+                    label="📥 Télécharger CSV Complet",
                     data=csv_content,
                     file_name=filename,
                     mime="text/csv",
@@ -433,19 +430,20 @@ class ExtractionServiceDB:
                     use_container_width=True
                 )
 
-                st.success("✅ CSV des hôtels prêt pour téléchargement")
+                st.success("✅ CSV complet prêt pour téléchargement")
+                st.info("💡 Ce CSV inclut toutes les données: Cvent, Google Maps et Website LLM")
 
         except Exception as e:
             st.error(f"❌ Erreur génération CSV: {e}")
 
-    def _export_rooms_csv(self):
-        """Exporte les salles en CSV depuis Supabase"""
+    def _export_rooms_only_csv(self):
+        """Exporte uniquement les salles de réunion en CSV"""
         if not self.session_id:
             st.error("❌ Aucune session active")
             return
 
         try:
-            with st.spinner("Génération du CSV des salles..."):
+            with st.spinner("Génération du CSV des salles uniquement..."):
                 csv_content = self.db_service.export_session_to_csv(
                     session_id=self.session_id,
                     include_empty_rooms=False  # Seules les salles
@@ -456,15 +454,16 @@ class ExtractionServiceDB:
                 filename = f"salles_seulement_{timestamp}.csv"
 
                 st.download_button(
-                    label="📥 Télécharger CSV des salles",
+                    label="📥 Télécharger CSV Salles Uniquement",
                     data=csv_content,
                     file_name=filename,
                     mime="text/csv",
-                    type="primary",
+                    type="secondary",
                     use_container_width=True
                 )
 
                 st.success("✅ CSV des salles prêt pour téléchargement")
+                st.info("💡 Ce CSV contient uniquement les hôtels avec salles de réunion")
 
         except Exception as e:
             st.error(f"❌ Erreur génération CSV: {e}")
