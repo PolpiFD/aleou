@@ -13,14 +13,19 @@ from ui.components import (
     render_csv_uploader, 
     render_extraction_options
 )
-from services.extraction_service import ExtractionService
+from services.extraction_service_db import ExtractionServiceDB
 
 
 class CSVExtractionPage:
     """Page d'extraction pour fichiers CSV"""
-    
+
     def __init__(self):
-        self.extraction_service = ExtractionService()
+        try:
+            self.extraction_service = ExtractionServiceDB()
+        except Exception as e:
+            st.error(f"❌ Erreur initialisation service: {e}")
+            st.info("🔧 Vérifiez votre configuration Supabase dans .env")
+            self.extraction_service = None
     
     def render(self):
         """Affiche la page d'extraction CSV"""
@@ -80,21 +85,31 @@ class CSVExtractionPage:
         options = render_extraction_options()
         
         if st.button("🚀 Lancer l'extraction", type="primary", use_container_width=True):
+            if not self.extraction_service:
+                st.error("❌ Service d'extraction non disponible")
+                return
+
             if options['cvent'] or options['gmaps'] or options.get('website', False):
-                self.extraction_service.process_csv_extraction(
-                    df, 
-                    extract_gmaps=options['gmaps'],
-                    extract_website=options.get('website', False)
-                )
+                with st.spinner("Préparation de l'extraction..."):
+                    self.extraction_service.process_csv_extraction(
+                        df,
+                        extract_gmaps=options['gmaps'],
+                        extract_website=options.get('website', False)
+                    )
             else:
                 st.warning("⚠️ Aucune extraction sélectionnée")
 
 
 class SingleURLExtractionPage:
     """Page d'extraction pour URL unique"""
-    
+
     def __init__(self):
-        self.extraction_service = ExtractionService()
+        try:
+            self.extraction_service = ExtractionServiceDB()
+        except Exception as e:
+            st.error(f"❌ Erreur initialisation service: {e}")
+            st.info("🔧 Vérifiez votre configuration Supabase dans .env")
+            self.extraction_service = None
     
     def render(self):
         """Affiche la page d'extraction URL unique"""
@@ -113,6 +128,9 @@ class SingleURLExtractionPage:
         
         # Traitement des résultats EN DEHORS du formulaire
         if submitted:
+            if not self.extraction_service:
+                st.error("❌ Service d'extraction non disponible")
+                return
             self._handle_form_submission(hotel_data, options)
     
     def _get_hotel_form_data(self):
@@ -164,13 +182,14 @@ class SingleURLExtractionPage:
             return
         
         if options['cvent'] or options['gmaps'] or options['website']:
-            self.extraction_service.process_single_url_extraction(
-                hotel_data['name'], 
-                hotel_data['address'], 
-                hotel_data['url'],
-                extract_gmaps=options['gmaps'],
-                extract_website=options['website']
-            )
+            with st.spinner(f"Extraction de {hotel_data['name']}..."):
+                self.extraction_service.process_single_url_extraction(
+                    hotel_data['name'],
+                    hotel_data['address'],
+                    hotel_data['url'],
+                    extract_gmaps=options['gmaps'],
+                    extract_website=options['website']
+                )
         else:
             st.warning("⚠️ Aucune extraction sélectionnée")
     

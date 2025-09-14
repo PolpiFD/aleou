@@ -14,12 +14,12 @@ import tempfile
 sys.path.append(str(Path(__file__).parent.parent / "salles_cvent"))
 
 from salles_cvent.detect_button import detect_button
-from salles_cvent.save_to_csv import save_to_csv
+# from salles_cvent.save_to_csv import save_to_csv  # Plus nécessaire avec Supabase
 from salles_cvent.extract_data_popup import extract_data_popup
 from salles_cvent.extract_data_grid import extract_data_grid
 
 
-def extract_cvent_data(hotel_name, hotel_address, cvent_url, output_dir="outputs"):
+def extract_cvent_data(hotel_name, hotel_address, cvent_url, output_dir=None):
     """Extrait les données des salles de conférence depuis Cvent
     
     Args:
@@ -38,8 +38,8 @@ def extract_cvent_data(hotel_name, hotel_address, cvent_url, output_dir="outputs
     print(f"🎯 Début extraction Cvent pour {hotel_name}")
     print(f"🔗 URL: {cvent_url}")
     
-    # Créer le dossier de sortie s'il n'existe pas
-    Path(output_dir).mkdir(exist_ok=True)
+    # Le dossier de sortie n'est plus nécessaire avec Supabase
+    # Path(output_dir).mkdir(exist_ok=True) if output_dir else None
     
     result = {
         'hotel_name': hotel_name,
@@ -53,7 +53,7 @@ def extract_cvent_data(hotel_name, hotel_address, cvent_url, output_dir="outputs
             'rows': [],
             'salles_count': 0,
             'interface_type': None,
-            'csv_file': None
+            # 'csv_file': None  # Plus de fichier CSV avec Supabase
         }
     }
     
@@ -106,22 +106,18 @@ def extract_cvent_data(hotel_name, hotel_address, cvent_url, output_dir="outputs
             if interface_type == "popup":
                 print("📋 Interface POPUP détectée - extraction...")
                 headers, data = extract_data_popup(page)
-                filename = f"salles_popup_{hotel_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-                
+
             elif interface_type == "popup_direct":
                 print("📋 Interface POPUP directe détectée - extraction...")
                 headers, data = extract_data_popup(page)
-                filename = f"salles_popup_{hotel_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-                
+
             elif interface_type == "grid":
                 print("📋 Interface GRID détectée - extraction...")
                 headers, data = extract_data_grid(page)
-                filename = f"salles_grid_{hotel_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-                
+
             elif interface_type == "grid_direct":
                 print("📋 Interface GRID directe détectée - extraction...")
                 headers, data = extract_data_grid(page)
-                filename = f"salles_grid_{hotel_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
                 
             else:
                 raise Exception(f"Type d'interface non reconnu: {interface_type}")
@@ -133,19 +129,18 @@ def extract_cvent_data(hotel_name, hotel_address, cvent_url, output_dir="outputs
             if not headers or len(headers) == 0:
                 raise Exception("Headers manquants")
             
-            # Sauvegarde des données
-            csv_path = os.path.join(output_dir, filename)
-            save_to_csv(headers, data, csv_path)
-            
+            # Plus de sauvegarde CSV - les données sont retournées directement
+            # pour être insérées dans Supabase
+
             # Remplir les résultats
             result['success'] = True
             result['data']['headers'] = headers
             result['data']['rows'] = data
             result['data']['salles_count'] = len(data)
-            result['data']['csv_file'] = csv_path
-            
+            # result['data']['csv_file'] = None  # Plus de fichier CSV
+
             print(f"🎉 Extraction réussie: {len(data)} salles extraites")
-            print(f"📄 Fichier sauvegardé: {csv_path}")
+            print(f"💾 Données prêtes pour insertion Supabase")
             
             browser.close()
             
@@ -207,7 +202,7 @@ def get_extraction_summary(result):
         summary.update({
             'salles_count': result['data']['salles_count'],
             'interface_type': result['data']['interface_type'],
-            'csv_file': result['data']['csv_file'],
+            # 'csv_file': result['data']['csv_file'],  # Plus de CSV
             'headers_count': len(result['data']['headers']),
             'sample_headers': result['data']['headers'][:5] if result['data']['headers'] else []
         })

@@ -6,6 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a hotel information extraction application that scrapes data from Cvent, Google Maps, and hotel websites using Playwright, Firecrawl, and OpenAI APIs. The application provides a Streamlit web interface for batch processing hotels from CSV files or individual URLs.
 
+## Principes de Développement
+1. **Méthodologie**: Think → Design → Plan → Code → Test → Review → Deploy
+2. **Architecture**: ADR pour choix structurants
+3. **Code**: Clean Code, SRP, PEP 8/257
+4. **Sécurité**: Contrôles OWASP, dépendances sécurisées
+5. **Tests**: Couverture ≥ 90%, unitaires + intégration + E2E
+6. **Observabilité**: OpenTelemetry, Prometheus, Grafana
+7. **Documentation**: Chaque ajout de feature et/ou modification du global doivent avoir un impact sur le fichier doc.md qui sert de documentation sur l'ensemble du projet. !!Important!! 
+8. **Fonction**: Une fonction ne doit pas faire plus de 30 lignes
+
 ## Essential Commands
 
 ### Development
