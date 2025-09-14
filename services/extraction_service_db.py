@@ -287,33 +287,20 @@ class ExtractionServiceDB:
                     else:
                         st.info("⏳ En cours...")
 
-                # Section de téléchargement immédiat
+                # Section de téléchargement immédiat (FIX: clé stable)
                 if export_stats.get('total_rooms', 0) > 0:
-                    # Générer le CSV à chaque mise à jour
-                    try:
-                        csv_content = self.db_service.export_session_to_csv(
-                            session_id=self.session_id,
-                            include_empty_rooms=True
-                        )
+                    # Afficher seulement les infos, pas régénérer le CSV constamment
+                    st.info(f"💾 {export_stats['total_rooms']} salles disponibles pour téléchargement")
 
-                        # Générer le nom de fichier unique
-                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                        filename = f"extraction_partielle_{timestamp}.csv"
+                    # Bouton avec clé stable et génération à la demande
+                    if st.button(
+                        f"📥 Générer et Télécharger CSV ({export_stats['total_rooms']} salles)",
+                        key=f"gen_csv_{self.session_id}",
+                        use_container_width=True,
+                        type="secondary"
+                    ):
+                        self._generate_partial_csv_download()
 
-                        # Bouton de téléchargement direct (compatible Streamlit)
-                        st.download_button(
-                            label=f"📥 Télécharger CSV ({export_stats['total_rooms']} salles)",
-                            data=csv_content,
-                            file_name=filename,
-                            mime="text/csv",
-                            type="secondary",
-                            use_container_width=True,
-                            key=f"download_csv_{stats.get('completed', 0)}"
-                        )
-
-                    except Exception as e:
-                        st.error(f"Erreur génération CSV: {e}")
-                        st.info("ℹ️ Réessayez dans quelques instants")
                 else:
                     st.info("ℹ️ Aucune donnée disponible pour le téléchargement pour le moment")
 
@@ -467,6 +454,40 @@ class ExtractionServiceDB:
 
         except Exception as e:
             st.error(f"❌ Erreur génération CSV: {e}")
+
+    def _generate_partial_csv_download(self):
+        """Génère et propose le téléchargement du CSV partiel"""
+        if not self.session_id:
+            st.error("❌ Aucune session active")
+            return
+
+        try:
+            with st.spinner("Génération du CSV partiel..."):
+                csv_content = self.db_service.export_session_to_csv(
+                    session_id=self.session_id,
+                    include_empty_rooms=True
+                )
+
+                # Générer nom de fichier avec timestamp
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                filename = f"extraction_partielle_{timestamp}.csv"
+
+                # Créer un nouvel emplacement pour le download button
+                st.download_button(
+                    label=f"📥 Télécharger CSV Partiel",
+                    data=csv_content,
+                    file_name=filename,
+                    mime="text/csv",
+                    type="primary",
+                    use_container_width=True,
+                    key=f"download_partial_{timestamp}"
+                )
+
+                st.success("✅ CSV partiel généré avec succès!")
+                st.info("💡 Le téléchargement débutera automatiquement")
+
+        except Exception as e:
+            st.error(f"❌ Erreur génération CSV partiel: {e}")
 
     def _cleanup_failed_session(self):
         """Nettoie une session échouée"""
