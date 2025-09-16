@@ -271,40 +271,79 @@ class ParallelHotelProcessorDB:
         Returns:
             List[Dict]: Résultats du batch
         """
-        batch_results = []
+        try:
+            batch_results = []
+            logger.info(f"🔄 Début traitement batch de {len(batch)} hôtels")
 
-        # Traiter chaque hôtel du batch
-        tasks = []
-        for hotel_data in batch:
-            task = self._process_single_hotel(
-                hotel_data,
-                extract_cvent,
-                extract_gmaps,
-                extract_website
-            )
-            tasks.append(task)
+            # Traiter chaque hôtel du batch
+            tasks = []
+            for hotel_data in batch:
+                task = self._process_single_hotel(
+                    hotel_data,
+                    extract_cvent,
+                    extract_gmaps,
+                    extract_website
+                )
+                tasks.append(task)
 
-        # Exécuter en parallèle dans le batch
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+            # Exécuter en parallèle dans le batch
+            logger.info(f"⚡ Lancement extraction parallèle {len(tasks)} hôtels")
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            logger.info(f"✅ Extraction parallèle terminée, consolidation des résultats...")
 
-        # Traiter les résultats
-        for i, result in enumerate(results):
-            hotel_data = batch[i]
+            # Traiter les résultats avec protection individuelle
+            for i, result in enumerate(results):
+                try:
+                    hotel_data = batch[i]
 
-            if isinstance(result, Exception):
-                logger.error(f"Erreur hôtel {hotel_data.get('name')}: {result}")
-                batch_results.append({
+                    if isinstance(result, Exception):
+                        logger.error(f"Erreur hôtel {hotel_data.get('name')}: {result}")
+                        batch_results.append({
+                            'hotel_id': hotel_data.get('hotel_id'),
+                            'name': hotel_data.get('name'),
+                            'success': False,
+                            'error': str(result)
+                        })
+                        # Protection du progress reporter
+                        try:
+                            self.progress_reporter.update_progress(success=False)
+                        except Exception as progress_error:
+                            logger.warning(f"Erreur progress reporter (failure): {progress_error}")
+                    else:
+                        batch_results.append(result)
+                        # Protection du progress reporter
+                        try:
+                            self.progress_reporter.update_progress(success=True)
+                        except Exception as progress_error:
+                            logger.warning(f"Erreur progress reporter (success): {progress_error}")
+
+                except Exception as consolidation_error:
+                    logger.error(f"💥 Erreur consolidation résultat {i}: {consolidation_error}")
+                    # Ajouter un résultat d'erreur par défaut
+                    hotel_data = batch[i] if i < len(batch) else {'name': f'Hotel_{i}', 'hotel_id': None}
+                    batch_results.append({
+                        'hotel_id': hotel_data.get('hotel_id'),
+                        'name': hotel_data.get('name', f'Hotel_{i}'),
+                        'success': False,
+                        'error': f'Erreur consolidation: {consolidation_error}'
+                    })
+
+            logger.info(f"🎯 Batch consolidé: {len(batch_results)} résultats")
+            return batch_results
+
+        except Exception as batch_error:
+            logger.error(f"💥 ERREUR CRITIQUE dans _process_batch: {batch_error}")
+            # Retourner des résultats d'erreur par défaut pour tous les hôtels
+            fallback_results = []
+            for hotel_data in batch:
+                fallback_results.append({
                     'hotel_id': hotel_data.get('hotel_id'),
-                    'name': hotel_data.get('name'),
+                    'name': hotel_data.get('name', 'Hotel_Unknown'),
                     'success': False,
-                    'error': str(result)
+                    'error': f'Crash batch: {batch_error}'
                 })
-                self.progress_reporter.update_progress(success=False)
-            else:
-                batch_results.append(result)
-                self.progress_reporter.update_progress(success=True)
-
-        return batch_results
+            logger.warning(f"🚨 Retour de {len(fallback_results)} résultats fallback")
+            return fallback_results
 
     async def _process_single_hotel(
         self,
