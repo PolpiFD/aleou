@@ -354,12 +354,48 @@ class SupabaseClient:
                 if db_column:
                     if db_column == "photos_urls" and isinstance(value, list):
                         cleaned_data[db_column] = value
+                    elif db_column.startswith('pr_'):
+                        # Champs PR sont des booleans - convertir automatiquement
+                        cleaned_data[db_column] = self._convert_to_boolean(value)
                     else:
                         cleaned_data[db_column] = value
 
         # Insérer seulement si on a des données utiles
         if len(cleaned_data) > 1:  # Plus que juste hotel_id
             self.client.table("hotel_website_data").insert(cleaned_data).execute()
+
+    def _convert_to_boolean(self, value) -> bool:
+        """Convertit intelligemment une valeur vers un boolean pour les champs PR
+
+        Args:
+            value: La valeur à convertir (peut être string, int, bool, etc.)
+
+        Returns:
+            bool: True ou False selon la logique de conversion
+        """
+        if isinstance(value, bool):
+            return value
+
+        if isinstance(value, str):
+            # Valeurs textuelles communes
+            if value.lower() in ['true', '1', 'yes', 'oui', 'on']:
+                return True
+            elif value.lower() in ['false', '0', 'no', 'non', 'off']:
+                return False
+            # Si c'est un nombre en string
+            try:
+                num_value = float(value)
+                return num_value > 0
+            except (ValueError, TypeError):
+                # Si ce n'est pas un nombre, considérer les strings non-vides comme True
+                return len(value.strip()) > 0
+
+        if isinstance(value, (int, float)):
+            # Les nombres > 0 sont True, 0 ou négatifs sont False
+            return value > 0
+
+        # Pour tout autre type, considérer les valeurs non-nulles comme True
+        return value is not None
 
     # ============ Query Methods ============
 

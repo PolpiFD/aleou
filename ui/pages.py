@@ -342,6 +342,9 @@ class ExportsPage:
             st.error("❌ Service de base de données non disponible")
             return
 
+        # Lancer automatiquement le watchdog au chargement de la page
+        watchdog_result = self._run_session_watchdog()
+
         # Récupérer les 10 dernières sessions
         sessions = self._get_recent_sessions()
 
@@ -353,6 +356,21 @@ class ExportsPage:
         # Afficher chaque session
         for session in sessions:
             self._render_session_card(session)
+
+    def _run_session_watchdog(self):
+        """Lance le watchdog des sessions et affiche les résultats à l'utilisateur"""
+        try:
+            fixed_count = self.db_service.detect_and_fix_stuck_sessions()
+
+            if fixed_count > 0:
+                st.success(f"🔄 **Watchdog actif**: {fixed_count} session(s) bloquée(s) automatiquement corrigée(s)")
+                st.caption("💡 Les sessions terminées ont été détectées et finalisées automatiquement")
+
+            return fixed_count
+
+        except Exception as e:
+            st.warning(f"⚠️ Watchdog des sessions: {str(e)}")
+            return 0
 
     def _get_recent_sessions(self):
         """Récupère les 10 dernières sessions d'extraction"""

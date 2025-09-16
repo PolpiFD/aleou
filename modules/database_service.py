@@ -334,6 +334,62 @@ class DatabaseService:
             logger.error(f"Erreur récupération stats: {e}")
             return {}
 
+    def detect_and_fix_stuck_sessions(self):
+        """Détecte et corrige les sessions bloquées/gelées"""
+        try:
+            # Récupérer les sessions 'processing' qui pourraient être gelées
+            stuck_sessions = self.client.client.table("extraction_sessions")\
+                .select("*")\
+                .eq("status", "processing")\
+                .execute()
+
+            fixed_count = 0
+            for session in stuck_sessions.data:
+                session_id = session['id']
+                session_name = session.get('session_name', 'N/A')
+
+                # Vérifier les hôtels réels vs déclarés
+                actual_hotels = self.client.client.table("hotels")\
+                    .select("*")\
+                    .eq("session_id", session_id)\
+                    .execute()
+
+                actual_count = len(actual_hotels.data)
+                declared_count = session.get('total_hotels', 0)
+
+                # Compter les hôtels terminés
+                completed_hotels = [h for h in actual_hotels.data
+                                   if h.get('extraction_status') == 'completed']
+                processing_hotels = [h for h in actual_hotels.data
+                                   if h.get('extraction_status') == 'processing']
+
+                # Détecter une session "gelée" : tous les hôtels sont completed mais session encore processing
+                if len(completed_hotels) == actual_count and actual_count > 0:
+                    logger.warning(f"Session gelée détectée: {session_name} - {actual_count} hôtels completed mais session en processing")
+
+                    # Auto-finaliser cette session
+                    self.finalize_session(session_id, success=True)
+                    fixed_count += 1
+                    logger.info(f"Session {session_name} auto-finalisée ({actual_count} hôtels)")
+
+                elif len(processing_hotels) == 0 and actual_count < declared_count:
+                    # Cas où des hôtels manquent et plus rien ne se passe
+                    logger.warning(f"Session incomplète détectée: {session_name} - {actual_count}/{declared_count} hôtels, aucun en cours")
+
+                    # Finaliser avec les hôtels disponibles
+                    self.finalize_session(session_id, success=(actual_count > 0))
+                    fixed_count += 1
+                    logger.info(f"Session {session_name} finalisée avec {actual_count}/{declared_count} hôtels")
+
+            if fixed_count > 0:
+                logger.info(f"Watchdog: {fixed_count} sessions gelées corrigées")
+
+            return fixed_count
+
+        except Exception as e:
+            logger.error(f"Erreur watchdog sessions: {e}")
+            return 0
+
     def finalize_session(
         self,
         session_id: str,
