@@ -4,7 +4,7 @@ Gère les connexions, transactions et opérations CRUD
 """
 
 import os
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 from supabase import create_client, Client
 from dotenv import load_dotenv
 import time
