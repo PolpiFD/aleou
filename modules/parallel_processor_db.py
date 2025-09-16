@@ -133,6 +133,7 @@ class ParallelHotelProcessorDB:
 
             # Traiter chaque batch séquentiellement
             for batch_index, batch in enumerate(batches):
+                logger.info(f"🚀 DÉBUT batch {batch_index + 1}/{len(batches)}: {len(batch)} hôtels")
                 print(f"\n📦 Batch {batch_index + 1}/{len(batches)}: {len(batch)} hôtels")
 
                 # Insérer les hôtels du batch dans la DB
@@ -154,12 +155,21 @@ class ParallelHotelProcessorDB:
                     progress_callback
                 )
 
-                # Sauvegarder en DB
-                success, errors = self.db_service.process_batch_results(
-                    batch_results
-                )
-                total_success += success
-                total_errors += errors
+                # Sauvegarder en DB avec protection contre les crashes
+                logger.info(f"💾 Sauvegarde batch {batch_index + 1} en DB...")
+                try:
+                    success, errors = self.db_service.process_batch_results(
+                        batch_results
+                    )
+                    total_success += success
+                    total_errors += errors
+                    logger.info(f"✅ Batch {batch_index + 1} sauvegardé: {success} succès, {errors} échecs")
+                except Exception as batch_db_error:
+                    logger.error(f"❌ ERREUR critique sauvegarde batch {batch_index + 1}: {batch_db_error}")
+                    print(f"❌ Erreur sauvegarde batch {batch_index + 1}: {batch_db_error}")
+                    # Compter tous les hôtels du batch comme échoués
+                    total_errors += len(batch)
+                    # IMPORTANT: Ne pas crasher, continuer avec le batch suivant
 
                 # Mettre à jour l'activité après chaque batch pour éviter watchdog
                 try:
@@ -174,6 +184,10 @@ class ParallelHotelProcessorDB:
                     stats['batch_completed'] = batch_index + 1
                     stats['total_batches'] = len(batches)
                     await self._safe_callback(progress_callback, stats)
+
+                # Log de fin de batch
+                logger.info(f"✅ FIN batch {batch_index + 1}/{len(batches)} - Passage au suivant...")
+                print(f"✅ Batch {batch_index + 1} terminé, passage au suivant...")
 
             # Finaliser la session
             logger.info(f"🏁 Finalisation session {session_id}: {total_success} succès, {total_errors} erreurs")

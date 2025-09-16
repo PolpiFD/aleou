@@ -290,25 +290,30 @@ class DatabaseService:
         error_count = 0
 
         for result in batch_results:
-            # Récupérer l'ID de l'hôtel depuis le résultat
-            # (sera ajouté par le parallel processor)
-            hotel_id = result.get('hotel_id')
-            if not hotel_id:
-                logger.warning("Résultat sans hotel_id, ignoré")
-                error_count += 1
-                continue
+            try:
+                # Récupérer l'ID de l'hôtel depuis le résultat
+                # (sera ajouté par le parallel processor)
+                hotel_id = result.get('hotel_id')
+                if not hotel_id:
+                    logger.warning("Résultat sans hotel_id, ignoré")
+                    error_count += 1
+                    continue
 
-            # Traiter l'extraction
-            success = self.process_hotel_extraction(
-                hotel_id=hotel_id,
-                cvent_result=result.get('cvent_data'),
-                gmaps_result=result.get('gmaps_data'),
-                website_result=result.get('website_data')
-            )
+                # Traiter l'extraction avec protection supplémentaire
+                success = self.process_hotel_extraction(
+                    hotel_id=hotel_id,
+                    cvent_result=result.get('cvent_data'),
+                    gmaps_result=result.get('gmaps_data'),
+                    website_result=result.get('website_data')
+                )
 
-            if success:
-                success_count += 1
-            else:
+                if success:
+                    success_count += 1
+                else:
+                    error_count += 1
+
+            except Exception as hotel_error:
+                logger.error(f"💥 Erreur critique sur hôtel {result.get('hotel_id', 'UNKNOWN')}: {hotel_error}")
                 error_count += 1
 
         logger.info(
