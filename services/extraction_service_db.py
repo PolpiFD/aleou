@@ -50,6 +50,9 @@ class ExtractionServiceDB:
                 total_hotels=len(df)
             )
 
+            # Stocker dans l'état Streamlit pour persistance
+            st.session_state['last_session_id'] = self.session_id
+
             st.info(f"📊 Session créée: {len(df)} hôtels à traiter")
 
             # Préparer les données
@@ -148,6 +151,9 @@ class ExtractionServiceDB:
                 csv_filename=session_name,
                 total_hotels=1
             )
+
+            # Stocker dans l'état Streamlit pour persistance
+            st.session_state['last_session_id'] = self.session_id
 
             hotel_data = {
                 'name': name,
@@ -292,10 +298,11 @@ class ExtractionServiceDB:
                     # Afficher seulement les infos, pas régénérer le CSV constamment
                     st.info(f"💾 {export_stats['total_rooms']} salles disponibles pour téléchargement")
 
-                    # Bouton avec clé stable et génération à la demande
+                    # Bouton avec clé unique basée sur timestamp pour éviter conflits
+                    button_key = f"gen_csv_{self.session_id}_{int(time.time())}"
                     if st.button(
                         f"📥 Générer et Télécharger CSV ({export_stats['total_rooms']} salles)",
-                        key=f"gen_csv_{self.session_id}",
+                        key=button_key,
                         use_container_width=True,
                         type="secondary"
                     ):
@@ -376,7 +383,14 @@ class ExtractionServiceDB:
 
     def _display_export_options(self):
         """Affiche les options d'export depuis Supabase"""
-        if not self.session_id:
+        # Stocker la session_id dans l'état Streamlit pour persistance
+        if self.session_id:
+            st.session_state['last_session_id'] = self.session_id
+
+        # Utiliser la session courante ou la dernière stockée
+        session_to_use = self.session_id or st.session_state.get('last_session_id')
+
+        if not session_to_use:
             return
 
         st.subheader("📥 Options d'export")
@@ -385,10 +399,12 @@ class ExtractionServiceDB:
 
         with col1:
             if st.button("📊 Export Complet (Cvent + Google Maps + Website)", use_container_width=True):
+                self.session_id = session_to_use  # Restaurer la session_id
                 self._export_complete_csv()
 
         with col2:
             if st.button("🏢 Export Salles Uniquement", use_container_width=True):
+                self.session_id = session_to_use  # Restaurer la session_id
                 self._export_rooms_only_csv()
 
     def _export_complete_csv(self):
