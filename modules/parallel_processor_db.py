@@ -89,10 +89,7 @@ class ParallelHotelProcessorDB:
         self.db_service = DatabaseService()
         self.session_id = None
 
-        # Executors partagés pour éviter la fuite de threads
-        self.cvent_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cvent")
-        self.gmaps_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="gmaps")
-        self.website_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="website")
+        # Plus d'executors partagés - pattern temporaire pour éviter fuites threads
 
     async def process_hotels_to_database(
         self,
@@ -249,8 +246,7 @@ class ParallelHotelProcessorDB:
             raise
 
         finally:
-            # Fermer proprement les executors
-            self._shutdown_executors()
+            # Plus besoin de fermer les executors - pattern temporaire auto-cleanup
 
     async def _process_and_save_batch(
         self,
@@ -330,16 +326,7 @@ class ParallelHotelProcessorDB:
             # Compter tous les hôtels du batch comme échoués
             return {'success': 0, 'errors': len(batch)}
 
-    def _shutdown_executors(self):
-        """Ferme proprement tous les executors partagés"""
-        try:
-            logger.info("🔄 Fermeture des executors...")
-            self.cvent_executor.shutdown(wait=True)
-            self.gmaps_executor.shutdown(wait=True)
-            self.website_executor.shutdown(wait=True)
-            logger.info("✅ Tous les executors fermés proprement")
-        except Exception as e:
-            logger.warning(f"⚠️ Erreur fermeture executors: {e}")
+    # _shutdown_executors supprimé - plus d'executors partagés
 
     def _create_batches(
         self,
@@ -536,14 +523,15 @@ class ParallelHotelProcessorDB:
         """Extraction Cvent asynchrone"""
         loop = asyncio.get_event_loop()
 
-        # Utiliser l'executor partagé au lieu de créer un nouveau
-        future = loop.run_in_executor(
-            self.cvent_executor,
-            extract_cvent_data,
-            hotel_data['name'],
-            hotel_data.get('address', ''),
-            hotel_data['url']
-        )
+        # Pattern temporaire (comme ancien code qui marchait) - évite accumulation threads
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = loop.run_in_executor(
+                executor,
+                extract_cvent_data,
+                hotel_data['name'],
+                hotel_data.get('address', ''),
+                hotel_data['url']
+            )
 
         try:
             result = await asyncio.wait_for(
