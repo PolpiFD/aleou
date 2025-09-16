@@ -89,6 +89,11 @@ class ParallelHotelProcessorDB:
         self.db_service = DatabaseService()
         self.session_id = None
 
+        # Executors partagés pour éviter la fuite de threads
+        self.cvent_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cvent")
+        self.gmaps_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="gmaps")
+        self.website_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="website")
+
     async def process_hotels_to_database(
         self,
         hotels_data: List[Dict[str, str]],
@@ -237,6 +242,21 @@ class ParallelHotelProcessorDB:
                 print(f"❌ Finalisation échouée: {finalizer_error}")
 
             raise
+
+        finally:
+            # Fermer proprement les executors
+            self._shutdown_executors()
+
+    def _shutdown_executors(self):
+        """Ferme proprement tous les executors partagés"""
+        try:
+            logger.info("🔄 Fermeture des executors...")
+            self.cvent_executor.shutdown(wait=True)
+            self.gmaps_executor.shutdown(wait=True)
+            self.website_executor.shutdown(wait=True)
+            logger.info("✅ Tous les executors fermés proprement")
+        except Exception as e:
+            logger.warning(f"⚠️ Erreur fermeture executors: {e}")
 
     def _create_batches(
         self,
@@ -433,23 +453,23 @@ class ParallelHotelProcessorDB:
         """Extraction Cvent asynchrone"""
         loop = asyncio.get_event_loop()
 
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = loop.run_in_executor(
-                executor,
-                extract_cvent_data,
-                hotel_data['name'],
-                hotel_data.get('address', ''),
-                hotel_data['url']
-            )
+        # Utiliser l'executor partagé au lieu de créer un nouveau
+        future = loop.run_in_executor(
+            self.cvent_executor,
+            extract_cvent_data,
+            hotel_data['name'],
+            hotel_data.get('address', ''),
+            hotel_data['url']
+        )
 
-            try:
-                result = await asyncio.wait_for(
-                    future,
-                    timeout=self.config.cvent_timeout
-                )
-                return result
-            except asyncio.TimeoutError:
-                raise Exception(f"Timeout Cvent ({self.config.cvent_timeout}s)")
+        try:
+            result = await asyncio.wait_for(
+                future,
+                timeout=self.config.cvent_timeout
+            )
+            return result
+        except asyncio.TimeoutError:
+            raise Exception(f"Timeout Cvent ({self.config.cvent_timeout}s)")
 
     async def _extract_gmaps_async(
         self,
