@@ -220,7 +220,9 @@ class ParallelHotelProcessorDB:
                         None,
                         lambda: self.db_service.finalize_session(
                             session_id,
-                            success=(total_errors == 0)
+                            success=(total_errors == 0),
+                            success_count=total_success,
+                            error_count=total_errors
                         )
                     ),
                     timeout=30.0

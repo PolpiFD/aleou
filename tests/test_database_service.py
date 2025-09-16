@@ -213,6 +213,41 @@ class TestDatabaseService:
         mock_client = Mock()
         mock_client.get_session_progress.return_value = {'completed': 8, 'failed': 2}
         mock_client.update_session_status.return_value = None
+        # Mock des accès tables Supabase
+        hotels_table = MagicMock()
+        hotels_table.select.return_value = hotels_table
+        hotels_table.eq.return_value = hotels_table
+        hotels_table.execute.return_value = MagicMock(data=[
+            {'id': 'hotel-1', 'extraction_status': 'completed'},
+            {'id': 'hotel-2', 'extraction_status': 'completed'},
+            {'id': 'hotel-3', 'extraction_status': 'completed'},
+            {'id': 'hotel-4', 'extraction_status': 'completed'},
+            {'id': 'hotel-5', 'extraction_status': 'completed'},
+            {'id': 'hotel-6', 'extraction_status': 'completed'},
+            {'id': 'hotel-7', 'extraction_status': 'completed'},
+            {'id': 'hotel-8', 'extraction_status': 'completed'},
+            {'id': 'hotel-9', 'extraction_status': 'failed'},
+            {'id': 'hotel-10', 'extraction_status': 'failed'},
+        ])
+
+        sessions_table = MagicMock()
+        sessions_table.select.return_value = sessions_table
+        sessions_table.eq.return_value = sessions_table
+        sessions_table.execute.return_value = MagicMock(data=[
+            {'id': 'session-123', 'total_hotels': 10}
+        ])
+
+        client_wrapper = MagicMock()
+
+        def table_side_effect(table_name):
+            if table_name == "hotels":
+                return hotels_table
+            if table_name == "extraction_sessions":
+                return sessions_table
+            return MagicMock()
+
+        client_wrapper.table.side_effect = table_side_effect
+        mock_client.client = client_wrapper
         mock_supabase_client.return_value = mock_client
 
         service = DatabaseService()

@@ -452,21 +452,63 @@ class DatabaseService:
     def finalize_session(
         self,
         session_id: str,
-        success: bool = True
+        success: bool = True,
+        success_count: Optional[int] = None,
+        error_count: Optional[int] = None
     ):
         """Finalise une session d'extraction
 
         Args:
             session_id: ID de la session
             success: Si la session s'est terminée avec succès
+            success_count: Nombre d'hôtels traités avec succès (optionnel)
+            error_count: Nombre d'hôtels en erreur (optionnel)
         """
         logger.info(f"🔍 DEBUT finalize_session pour session_id={session_id}, success={success}")
         try:
             # Récupérer le nombre réel d'hôtels dans la DB
             logger.info(f"🔍 Récupération des hôtels réels pour session {session_id}")
-            actual_hotels = self.client.client.table("hotels").select("*").eq("session_id", session_id).execute()
-            actual_count = len(actual_hotels.data)
+            hotels_query = self.client.client.table("hotels").select("*").eq("session_id", session_id).execute()
+            hotels_data = hotels_query.data or []
+            actual_count = len(hotels_data)
             logger.info(f"🔍 Nombre d'hôtels réels trouvés: {actual_count}")
+
+            # Comptage des statuts directement depuis la table hôtels
+            completed_in_db = sum(1 for hotel in hotels_data
+                                  if hotel.get('extraction_status') == 'completed')
+            failed_in_db = sum(1 for hotel in hotels_data
+                               if hotel.get('extraction_status') == 'failed')
+
+            def _ensure_int(value, fallback=0):
+                if value is None:
+                    return fallback
+                try:
+                    return max(int(value), 0)
+                except (TypeError, ValueError):
+                    return fallback
+
+            computed_success = _ensure_int(success_count, fallback=completed_in_db)
+            computed_errors = _ensure_int(error_count, fallback=failed_in_db)
+
+            processed_hotels = computed_success + computed_errors
+            if processed_hotels > actual_count:
+                processed_hotels = actual_count
+
+            pending_hotels = max(actual_count - processed_hotels, 0)
+
+            logger.info(
+                "🔍 Comptage final - success=%s, errors=%s, pending=%s",
+                computed_success,
+                computed_errors,
+                pending_hotels
+            )
+
+            if success and actual_count > 0 and processed_hotels == 0:
+                logger.warning(
+                    "⚠️ Aucun hôtel comptabilisé malgré le succès annoncé - fallback sur total réel"
+                )
+                processed_hotels = actual_count
+                pending_hotels = 0
 
             # Récupérer la session actuelle
             logger.info(f"🔍 Récupération des données de session {session_id}")
@@ -484,12 +526,12 @@ class DatabaseService:
             if actual_count != declared_total:
                 logger.warning(f"Incohérence détectée: {actual_count} hôtels réels vs {declared_total} déclarés")
                 # Corriger automatiquement en prenant la réalité
-                status = "completed" if success and actual_count > 0 else "failed"
+                status = "completed" if success and processed_hotels > 0 else "failed"
                 logger.info(f"🔍 Mise à jour status session vers {status}")
                 self.client.update_session_status(
                     session_id=session_id,
                     status=status,
-                    processed_hotels=actual_count
+                    processed_hotels=processed_hotels if processed_hotels > 0 else actual_count
                 )
                 logger.info(f"🔍 Status mis à jour, mise à jour total_hotels")
                 # Mettre à jour le total pour correspondre à la réalité
@@ -502,15 +544,31 @@ class DatabaseService:
             else:
                 # Pas d'incohérence, finalisation normale
                 status = "completed" if success else "failed"
-                logger.info(f"🔍 Finalisation normale, récupération des statistiques")
-                stats = self.get_session_statistics(session_id)
-                logger.info(f"🔍 Statistiques récupérées: {stats}")
-                processed = stats.get('completed', 0) + stats.get('failed', 0)
-                logger.info(f"🔍 Mise à jour status final vers {status}, processed={processed}")
+                stats_processed = 0
+                stats = {}
+                if success_count is None or error_count is None:
+                    logger.info(f"🔍 Finalisation normale, récupération des statistiques")
+                    stats = self.get_session_statistics(session_id)
+                    logger.info(f"🔍 Statistiques récupérées: {stats}")
+                    stats_completed = _ensure_int(stats.get('completed'), fallback=0)
+                    stats_failed = _ensure_int(stats.get('failed'), fallback=0)
+                    stats_processed = stats_completed + stats_failed
+
+                if stats_processed > 0:
+                    logger.info(f"🔍 Processed calculé via stats: {stats_processed}")
+                    processed_hotels = max(processed_hotels, min(stats_processed, actual_count))
+                    pending_hotels = max(actual_count - processed_hotels, 0)
+
+                if not success and processed_hotels == 0 and actual_count > 0:
+                    processed_hotels = actual_count - pending_hotels
+
+                logger.info(
+                    f"🔍 Mise à jour status final vers {status}, processed={processed_hotels}"
+                )
                 self.client.update_session_status(
                     session_id=session_id,
                     status=status,
-                    processed_hotels=processed
+                    processed_hotels=processed_hotels
                 )
                 logger.info(f"🔍 Session {session_id} finalisée normalement: {status}")
 
