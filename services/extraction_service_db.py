@@ -123,8 +123,8 @@ class ExtractionServiceDB:
                     )
                 )
 
-                # Finalisation
-                self._display_final_results(final_stats, progress_bar, status_text)
+                # Finalisation (sans boutons d'export)
+                self._display_final_results_simple(final_stats, progress_bar, status_text)
 
             except Exception as e:
                 st.error(f"❌ Erreur traitement: {e}")
@@ -180,7 +180,7 @@ class ExtractionServiceDB:
             # Affichage des résultats
             if final_stats['successful'] > 0:
                 st.success(f"✅ Extraction réussie pour {name}")
-                self._display_hotel_data()
+                st.info("💾 Données sauvegardées dans Supabase - Consultez l'onglet Exports pour télécharger")
             else:
                 st.error(f"❌ Échec extraction pour {name}")
 
@@ -293,23 +293,12 @@ class ExtractionServiceDB:
                     else:
                         st.info("⏳ En cours...")
 
-                # Section de téléchargement immédiat (FIX: clé stable)
+                # Info sur les données disponibles
                 if export_stats.get('total_rooms', 0) > 0:
-                    # Afficher seulement les infos, pas régénérer le CSV constamment
-                    st.info(f"💾 {export_stats['total_rooms']} salles disponibles pour téléchargement")
-
-                    # Bouton avec clé unique basée sur timestamp pour éviter conflits
-                    button_key = f"gen_csv_{self.session_id}_{int(time.time())}"
-                    if st.button(
-                        f"📥 Générer et Télécharger CSV ({export_stats['total_rooms']} salles)",
-                        key=button_key,
-                        use_container_width=True,
-                        type="secondary"
-                    ):
-                        self._generate_partial_csv_download()
-
+                    st.info(f"💾 {export_stats['total_rooms']} salles extraites jusqu'à présent")
+                    st.caption("📥 Consultez l'onglet **Exports** pour télécharger en continu")
                 else:
-                    st.info("ℹ️ Aucune donnée disponible pour le téléchargement pour le moment")
+                    st.info("ℹ️ Extraction en cours...")
 
                 # Message d'aide
                 st.caption("💡 Ce CSV contient toutes les données extraites jusqu'à présent. Vous pouvez l'interrompre et télécharger à tout moment.")
@@ -381,95 +370,52 @@ class ExtractionServiceDB:
         except Exception as e:
             st.warning(f"Erreur affichage données: {e}")
 
-    def _display_export_options(self):
-        """Affiche les options d'export depuis Supabase"""
-        # Stocker la session_id dans l'état Streamlit pour persistance
-        if self.session_id:
-            st.session_state['last_session_id'] = self.session_id
+    def _display_final_results_simple(
+        self,
+        final_stats: Dict[str, Any],
+        progress_bar,
+        status_text
+    ):
+        """Affiche les résultats finaux sans boutons d'export"""
+        progress_bar.progress(1.0)
 
-        # Utiliser la session courante ou la dernière stockée
-        session_to_use = self.session_id or st.session_state.get('last_session_id')
-
-        if not session_to_use:
-            return
-
-        st.subheader("📥 Options d'export")
-
-        # Générer directement les CSV et les proposer en téléchargement
-        try:
-            # CSV Complet
-            csv_complete = self.db_service.export_session_to_csv(
-                session_id=session_to_use,
-                include_empty_rooms=True
+        if final_stats['failed'] == 0:
+            status_text.success("🎉 Extraction terminée avec succès!")
+        else:
+            status_text.warning(
+                f"⚠️ Extraction terminée: {final_stats['failed']} échecs"
             )
 
-            # CSV Salles uniquement
-            csv_rooms_only = self.db_service.export_session_to_csv(
-                session_id=session_to_use,
-                include_empty_rooms=False
+        # Affichage des statistiques finales
+        st.subheader("📊 Résultats finaux")
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric(
+                "Total traité",
+                final_stats['total_hotels']
+            )
+        with col2:
+            st.metric(
+                "Succès",
+                final_stats['successful'],
+                delta=f"{(final_stats['successful']/final_stats['total_hotels']*100):.1f}%"
+            )
+        with col3:
+            st.metric(
+                "Échecs",
+                final_stats['failed']
+            )
+        with col4:
+            st.metric(
+                "Temps total",
+                f"{final_stats.get('elapsed_time', 0):.1f}s"
             )
 
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.download_button(
-                    label="📊 Export Complet (Cvent + Google Maps + Website)",
-                    data=csv_complete,
-                    file_name=f"export_complet_{timestamp}.csv",
-                    mime="text/csv",
-                    key=f"export_complete_{session_to_use}",
-                    use_container_width=True
-                )
-
-            with col2:
-                st.download_button(
-                    label="🏢 Export Salles Uniquement",
-                    data=csv_rooms_only,
-                    file_name=f"salles_uniquement_{timestamp}.csv",
-                    mime="text/csv",
-                    key=f"export_rooms_{session_to_use}",
-                    use_container_width=True
-                )
-
-        except Exception as e:
-            st.error(f"❌ Erreur génération CSV: {e}")
-
-
-    def _generate_partial_csv_download(self):
-        """Génère et propose le téléchargement du CSV partiel"""
-        if not self.session_id:
-            st.error("❌ Aucune session active")
-            return
-
-        try:
-            with st.spinner("Génération du CSV partiel..."):
-                csv_content = self.db_service.export_session_to_csv(
-                    session_id=self.session_id,
-                    include_empty_rooms=True
-                )
-
-                # Générer nom de fichier avec timestamp
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                filename = f"extraction_partielle_{timestamp}.csv"
-
-                # Créer un nouvel emplacement pour le download button
-                st.download_button(
-                    label=f"📥 Télécharger CSV Partiel",
-                    data=csv_content,
-                    file_name=filename,
-                    mime="text/csv",
-                    type="primary",
-                    use_container_width=True,
-                    key=f"download_partial_{timestamp}"
-                )
-
-                st.success("✅ CSV partiel généré avec succès!")
-                st.info("💡 Le téléchargement débutera automatiquement")
-
-        except Exception as e:
-            st.error(f"❌ Erreur génération CSV partiel: {e}")
+        # Message de redirection vers la page Exports
+        st.success("✅ Extraction terminée!")
+        st.info("📥 Consultez l'onglet **Exports** dans la navigation pour télécharger vos CSV")
 
     def _cleanup_failed_session(self):
         """Nettoie une session échouée"""

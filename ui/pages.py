@@ -319,4 +319,159 @@ class ResultsDisplayPage:
         
         with st.expander(f"❌ Erreurs ({len(consolidation_stats['failed_hotels'])})", expanded=False):
             for failed in consolidation_stats['failed_hotels']:
-                st.error(f"**{failed['name']}**: {failed['error']}") 
+                st.error(f"**{failed['name']}**: {failed['error']}")
+
+
+class ExportsPage:
+    """Page dédiée aux exports CSV depuis Supabase"""
+
+    def __init__(self):
+        try:
+            from modules.database_service import DatabaseService
+            self.db_service = DatabaseService()
+        except Exception as e:
+            st.error(f"❌ Erreur initialisation service: {e}")
+            st.info("🔧 Vérifiez votre configuration Supabase dans .env")
+            self.db_service = None
+
+    def render(self):
+        """Affiche la page d'exports"""
+        st.subheader("📥 Historique des Extractions")
+
+        if not self.db_service:
+            st.error("❌ Service de base de données non disponible")
+            return
+
+        # Récupérer les 10 dernières sessions
+        sessions = self._get_recent_sessions()
+
+        if not sessions:
+            st.info("ℹ️ Aucune extraction trouvée")
+            st.caption("💡 Lancez une extraction depuis l'onglet **Extraction** pour voir vos sessions ici")
+            return
+
+        # Afficher chaque session
+        for session in sessions:
+            self._render_session_card(session)
+
+    def _get_recent_sessions(self):
+        """Récupère les 10 dernières sessions d'extraction"""
+        try:
+            result = self.db_service.client.client.table("extraction_sessions")\
+                .select("*")\
+                .order("created_at", desc=True)\
+                .limit(10)\
+                .execute()
+
+            return result.data
+        except Exception as e:
+            st.error(f"❌ Erreur récupération sessions: {e}")
+            return []
+
+    def _render_session_card(self, session):
+        """Affiche une carte de session avec boutons d'export"""
+        with st.container():
+            # Header de la session
+            col1, col2, col3 = st.columns([3, 2, 2])
+
+            with col1:
+                session_date = session.get('created_at', '')[:19].replace('T', ' ')
+                st.markdown(f"### 🗓️ {session_date}")
+                st.caption(f"**Fichier:** {session.get('csv_filename', 'N/A')}")
+
+            with col2:
+                total_hotels = session.get('total_hotels', 0)
+                processed = session.get('processed_hotels', 0)
+                st.metric("Hôtels", f"{processed}/{total_hotels}")
+
+            with col3:
+                status = session.get('status', 'unknown')
+                status_emoji = {
+                    'completed': '✅',
+                    'processing': '⏳',
+                    'failed': '❌'
+                }.get(status, '❓')
+                st.metric("Statut", f"{status_emoji} {status.title()}")
+
+            # Boutons d'export
+            if status in ['completed', 'processing']:
+                self._render_export_buttons(session['id'])
+            else:
+                st.warning("⚠️ Session échouée - Exports non disponibles")
+
+            st.markdown("---")
+
+    def _render_export_buttons(self, session_id):
+        """Affiche les boutons d'export pour une session"""
+        col1, col2 = st.columns(2)
+
+        try:
+            # Générer les CSV
+            csv_complete = self._generate_csv_from_view(session_id, include_empty_rooms=True)
+            csv_rooms_only = self._generate_csv_from_view(session_id, include_empty_rooms=False)
+
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+            with col1:
+                if csv_complete:
+                    st.download_button(
+                        label="📊 Export Complet",
+                        data=csv_complete,
+                        file_name=f"export_complet_{session_id[:8]}_{timestamp}.csv",
+                        mime="text/csv",
+                        key=f"complete_{session_id}",
+                        use_container_width=True,
+                        help="Toutes les données: Cvent + Google Maps + Website"
+                    )
+                else:
+                    st.button("📊 Export Complet", disabled=True, use_container_width=True)
+                    st.caption("Aucune donnée")
+
+            with col2:
+                if csv_rooms_only:
+                    st.download_button(
+                        label="🏢 Export Salles",
+                        data=csv_rooms_only,
+                        file_name=f"salles_seulement_{session_id[:8]}_{timestamp}.csv",
+                        mime="text/csv",
+                        key=f"rooms_{session_id}",
+                        use_container_width=True,
+                        type="secondary",
+                        help="Uniquement les hôtels avec salles de réunion"
+                    )
+                else:
+                    st.button("🏢 Export Salles", disabled=True, use_container_width=True)
+                    st.caption("Aucune salle")
+
+        except Exception as e:
+            st.error(f"❌ Erreur génération CSV: {e}")
+
+    def _generate_csv_from_view(self, session_id, include_empty_rooms=True):
+        """Génère le CSV depuis la vue consolidée"""
+        try:
+            # Utiliser la vue consolidée si elle existe
+            try:
+                result = self.db_service.client.client.table("consolidated_export")\
+                    .select("*")\
+                    .eq("session_id", session_id)\
+                    .execute()
+
+                if result.data:
+                    df = pd.DataFrame(result.data)
+
+                    # Filtrer selon les options
+                    if not include_empty_rooms:
+                        df = df[df['nom_salle'].notna() & (df['nom_salle'] != '')]
+
+                    return df.to_csv(index=False, encoding='utf-8')
+
+            except Exception:
+                # Fallback sur l'ancienne méthode si la vue n'existe pas
+                return self.db_service.export_session_to_csv(
+                    session_id=session_id,
+                    include_empty_rooms=include_empty_rooms
+                )
+
+        except Exception as e:
+            st.error(f"Erreur export CSV: {e}")
+            return None 
