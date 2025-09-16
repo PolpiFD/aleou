@@ -101,6 +101,10 @@ class SupabaseClient:
             status: Nouveau statut
             processed_hotels: Nombre d'hôtels traités
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"🔍 DEBUT update_session_status(session_id={session_id}, status={status}, processed_hotels={processed_hotels})")
         data = {
             "status": status,
             "last_activity": datetime.now().isoformat()
@@ -108,9 +112,12 @@ class SupabaseClient:
         if processed_hotels is not None:
             data["processed_hotels"] = processed_hotels
 
-        self.client.table("extraction_sessions").update(data).eq(
+        logger.info(f"🔍 Exécution UPDATE sur extraction_sessions avec data={data}")
+        result = self.client.table("extraction_sessions").update(data).eq(
             "id", session_id
         ).execute()
+        logger.info(f"🔍 FIN update_session_status - SUCCESS")
+        return result
 
     @retry_on_error(max_retries=3)
     def update_session_activity(self, session_id: str):
@@ -456,13 +463,21 @@ class SupabaseClient:
         Returns:
             Dict: Statistiques de progression
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"🔍 DEBUT get_session_progress(session_id={session_id})")
         # Utiliser la vue SQL créée
+        logger.info(f"🔍 Exécution SELECT sur extraction_progress")
         result = self.client.table("extraction_progress").select("*").eq(
             "session_id", session_id
         ).execute()
+        logger.info(f"🔍 Résultat extraction_progress: {len(result.data) if result.data else 0} lignes")
 
         if result.data:
+            logger.info(f"🔍 FIN get_session_progress - Données trouvées: {result.data[0]}")
             return result.data[0]
+        logger.info(f"🔍 FIN get_session_progress - Aucune donnée trouvée")
         return {}
 
     @retry_on_error(max_retries=3)

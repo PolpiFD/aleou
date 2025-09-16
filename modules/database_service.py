@@ -286,26 +286,31 @@ class DatabaseService:
         Returns:
             Tuple[int, int]: (nombre de succès, nombre d'échecs)
         """
+        logger.info(f"🔍 DEBUT process_batch_results - {len(batch_results)} résultats à traiter")
         success_count = 0
         error_count = 0
 
-        for result in batch_results:
+        for i, result in enumerate(batch_results):
+            logger.info(f"🔍 Traitement résultat {i+1}/{len(batch_results)}")
             try:
                 # Récupérer l'ID de l'hôtel depuis le résultat
                 # (sera ajouté par le parallel processor)
                 hotel_id = result.get('hotel_id')
+                logger.info(f"🔍 Hotel ID récupéré: {hotel_id}")
                 if not hotel_id:
                     logger.warning("Résultat sans hotel_id, ignoré")
                     error_count += 1
                     continue
 
                 # Traiter l'extraction avec protection supplémentaire
+                logger.info(f"🔍 Début process_hotel_extraction pour hotel_id {hotel_id}")
                 success = self.process_hotel_extraction(
                     hotel_id=hotel_id,
                     cvent_result=result.get('cvent_data'),
                     gmaps_result=result.get('gmaps_data'),
                     website_result=result.get('website_data')
                 )
+                logger.info(f"🔍 Fin process_hotel_extraction pour hotel_id {hotel_id}, success={success}")
 
                 if success:
                     success_count += 1
@@ -316,9 +321,7 @@ class DatabaseService:
                 logger.error(f"💥 Erreur critique sur hôtel {result.get('hotel_id', 'UNKNOWN')}: {hotel_error}")
                 error_count += 1
 
-        logger.info(
-            f"Batch traité: {success_count} succès, {error_count} échecs"
-        )
+        logger.info(f"🔍 FIN process_batch_results: {success_count} succès, {error_count} échecs")
         return success_count, error_count
 
     def get_session_statistics(
@@ -333,10 +336,13 @@ class DatabaseService:
         Returns:
             Dict: Statistiques de la session
         """
+        logger.info(f"🔍 DEBUT get_session_statistics pour session_id={session_id}")
         try:
-            return self.client.get_session_progress(session_id)
+            stats = self.client.get_session_progress(session_id)
+            logger.info(f"🔍 Statistiques récupérées: {stats}")
+            return stats
         except Exception as e:
-            logger.error(f"Erreur récupération stats: {e}")
+            logger.error(f"🔍 Erreur récupération stats pour session_id={session_id}: {e}")
             return {}
 
     def _is_session_truly_inactive(self, session_data: Dict) -> bool:
@@ -454,49 +460,63 @@ class DatabaseService:
             session_id: ID de la session
             success: Si la session s'est terminée avec succès
         """
+        logger.info(f"🔍 DEBUT finalize_session pour session_id={session_id}, success={success}")
         try:
             # Récupérer le nombre réel d'hôtels dans la DB
+            logger.info(f"🔍 Récupération des hôtels réels pour session {session_id}")
             actual_hotels = self.client.client.table("hotels").select("*").eq("session_id", session_id).execute()
             actual_count = len(actual_hotels.data)
+            logger.info(f"🔍 Nombre d'hôtels réels trouvés: {actual_count}")
 
             # Récupérer la session actuelle
+            logger.info(f"🔍 Récupération des données de session {session_id}")
             session_data = self.client.client.table("extraction_sessions").select("*").eq("id", session_id).execute()
             if not session_data.data:
                 logger.error(f"Session {session_id} introuvable")
                 return
+            logger.info(f"🔍 Données de session récupérées")
 
             current_session = session_data.data[0]
             declared_total = current_session.get('total_hotels', 0)
+            logger.info(f"🔍 Total déclaré: {declared_total}, Total réel: {actual_count}")
 
             # Détecter les incohérences
             if actual_count != declared_total:
                 logger.warning(f"Incohérence détectée: {actual_count} hôtels réels vs {declared_total} déclarés")
                 # Corriger automatiquement en prenant la réalité
                 status = "completed" if success and actual_count > 0 else "failed"
+                logger.info(f"🔍 Mise à jour status session vers {status}")
                 self.client.update_session_status(
                     session_id=session_id,
                     status=status,
                     processed_hotels=actual_count
                 )
+                logger.info(f"🔍 Status mis à jour, mise à jour total_hotels")
                 # Mettre à jour le total pour correspondre à la réalité
-                self.client.client.table("extraction_sessions").update({
+                logger.info(f"🔍 AVANT UPDATE direct total_hotels={actual_count}")
+                update_result = self.client.client.table("extraction_sessions").update({
                     'total_hotels': actual_count
                 }).eq('id', session_id).execute()
-                logger.info(f"Session {session_id} corrigée: {actual_count} hôtels réels")
+                logger.info(f"🔍 APRES UPDATE direct total_hotels - SUCCESS")
+                logger.info(f"🔍 Session {session_id} corrigée: {actual_count} hôtels réels")
             else:
                 # Pas d'incohérence, finalisation normale
                 status = "completed" if success else "failed"
+                logger.info(f"🔍 Finalisation normale, récupération des statistiques")
                 stats = self.get_session_statistics(session_id)
+                logger.info(f"🔍 Statistiques récupérées: {stats}")
                 processed = stats.get('completed', 0) + stats.get('failed', 0)
+                logger.info(f"🔍 Mise à jour status final vers {status}, processed={processed}")
                 self.client.update_session_status(
                     session_id=session_id,
                     status=status,
                     processed_hotels=processed
                 )
-                logger.info(f"Session {session_id} finalisée normalement: {status}")
+                logger.info(f"🔍 Session {session_id} finalisée normalement: {status}")
 
+            logger.info(f"🔍 FIN finalize_session pour session_id={session_id} - SUCCESS")
         except Exception as e:
-            logger.error(f"Erreur finalisation session: {e}")
+            logger.error(f"🔍 ERREUR dans finalize_session pour session_id={session_id}: {e}")
 
     def get_batch_hotels_with_ids(
         self,

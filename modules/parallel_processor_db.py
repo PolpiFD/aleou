@@ -160,15 +160,28 @@ class ParallelHotelProcessorDB:
                     progress_callback
                 )
 
-                # Sauvegarder en DB avec protection contre les crashes
+                # Sauvegarder en DB avec protection contre les crashes ET timeout
+                logger.info(f"🔍 AVANT process_batch_results - Batch {batch_index + 1}")
                 logger.info(f"💾 Sauvegarde batch {batch_index + 1} en DB...")
                 try:
-                    success, errors = self.db_service.process_batch_results(
-                        batch_results
+                    logger.info(f"🔍 Appel process_batch_results avec {len(batch_results)} résultats")
+                    # 🕰️ Timeout de 60s pour éviter le blocage
+                    success, errors = await asyncio.wait_for(
+                        asyncio.get_event_loop().run_in_executor(
+                            None,
+                            lambda: self.db_service.process_batch_results(batch_results)
+                        ),
+                        timeout=60.0
                     )
+                    logger.info(f"🔍 RETOUR process_batch_results: {success} succès, {errors} erreurs")
                     total_success += success
                     total_errors += errors
                     logger.info(f"✅ Batch {batch_index + 1} sauvegardé: {success} succès, {errors} échecs")
+                except asyncio.TimeoutError:
+                    logger.error(f"🕰️ TIMEOUT process_batch_results batch {batch_index + 1} (60s dépassé)")
+                    print(f"⚠️ Timeout sauvegarde batch {batch_index + 1} - session peut être bloquée")
+                    # Compter comme des erreurs
+                    total_errors += len(batch_results)
                 except Exception as batch_db_error:
                     logger.error(f"❌ ERREUR critique sauvegarde batch {batch_index + 1}: {batch_db_error}")
                     print(f"❌ Erreur sauvegarde batch {batch_index + 1}: {batch_db_error}")
@@ -194,17 +207,32 @@ class ParallelHotelProcessorDB:
                 logger.info(f"✅ FIN batch {batch_index + 1}/{len(batches)} - Passage au suivant...")
                 print(f"✅ Batch {batch_index + 1} terminé, passage au suivant...")
 
-            # Finaliser la session
+            # Finaliser la session avec timeout
+            logger.info(f"🔍 AVANT finalize_session - Session {session_id}")
             logger.info(f"🏁 Finalisation session {session_id}: {total_success} succès, {total_errors} erreurs")
             print(f"🏁 Finalisation session: {total_success} succès, {total_errors} erreurs")
 
             try:
-                self.db_service.finalize_session(
-                    session_id,
-                    success=(total_errors == 0)
+                logger.info(f"🔍 Appel finalize_session(session_id={session_id}, success={total_errors == 0})")
+                # 🕰️ Timeout de 30s pour éviter le blocage
+                await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: self.db_service.finalize_session(
+                            session_id,
+                            success=(total_errors == 0)
+                        )
+                    ),
+                    timeout=30.0
                 )
+                logger.info(f"🔍 RETOUR finalize_session - SUCCESS")
                 print(f"✅ Session {session_id} finalisée avec succès")
+            except asyncio.TimeoutError:
+                logger.error(f"🕰️ TIMEOUT finalize_session pour session {session_id} (30s dépassé)")
+                print(f"⚠️ Timeout finalisation session {session_id} - session peut rester bloquée")
+                # Ne pas lever l'exception, permettre au processus de continuer
             except Exception as e:
+                logger.error(f"🔍 ERREUR dans finalize_session: {e}")
                 logger.error(f"❌ Erreur finalisation session: {e}")
                 print(f"❌ Erreur finalisation session: {e}")
                 raise
