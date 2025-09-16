@@ -28,6 +28,9 @@ class ExtractionServiceDB:
         try:
             self.db_service = DatabaseService()
             self.session_id = None
+
+            # Restaurer automatiquement la session active si elle existe
+            self._restore_active_session()
         except SupabaseError as e:
             st.error(f"❌ Erreur configuration Supabase: {e}")
             st.info("🔧 Vérifiez SUPABASE_URL et SUPABASE_KEY dans votre .env")
@@ -416,6 +419,108 @@ class ExtractionServiceDB:
         # Message de redirection vers la page Exports
         st.success("✅ Extraction terminée!")
         st.info("📥 Consultez l'onglet **Exports** dans la navigation pour télécharger vos CSV")
+
+    def _restore_active_session(self):
+        """Restaure automatiquement une session d'extraction active depuis st.session_state"""
+        try:
+            # Vérifier si une session est stockée
+            stored_session_id = st.session_state.get('last_session_id')
+            if not stored_session_id:
+                return
+
+            # Vérifier si la session existe toujours dans Supabase
+            result = self.db_service.client.client.table("extraction_sessions")\
+                .select("*")\
+                .eq("id", stored_session_id)\
+                .execute()
+
+            if not result.data:
+                # Session n'existe plus, nettoyer
+                if 'last_session_id' in st.session_state:
+                    del st.session_state['last_session_id']
+                return
+
+            session_data = result.data[0]
+            session_status = session_data.get('status', 'unknown')
+
+            # Restaurer seulement si la session est en cours
+            if session_status == 'processing':
+                self.session_id = stored_session_id
+                self._display_restored_session_info(session_data, in_progress=True)
+            elif session_status == 'completed':
+                self.session_id = stored_session_id
+                self._display_restored_session_info(session_data, in_progress=False)
+            else:
+                # Session échouée ou invalide, nettoyer
+                if 'last_session_id' in st.session_state:
+                    del st.session_state['last_session_id']
+
+        except Exception as e:
+            # En cas d'erreur, ne pas bloquer l'initialisation
+            st.warning(f"⚠️ Impossible de restaurer la session précédente: {e}")
+            if 'last_session_id' in st.session_state:
+                del st.session_state['last_session_id']
+
+    def _display_restored_session_info(self, session_data, in_progress=True):
+        """Affiche les informations de la session restaurée"""
+        try:
+            # Récupérer les statistiques actuelles de la session
+            stats = self.db_service.get_session_statistics(self.session_id)
+
+            if in_progress:
+                st.info("🔄 **Session d'extraction détectée - Reprise du suivi**")
+
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric(
+                        "Progression",
+                        f"{stats.get('completed', 0)}/{stats.get('total_hotels', 0)}",
+                        delta=f"{stats.get('completed', 0)} complétés"
+                    )
+                with col2:
+                    st.metric(
+                        "En cours",
+                        stats.get('processing', 0)
+                    )
+                with col3:
+                    st.metric(
+                        "Échecs",
+                        stats.get('failed', 0)
+                    )
+
+                if stats.get('completed', 0) > 0:
+                    progress_percent = (stats.get('completed', 0) / stats.get('total_hotels', 1)) * 100
+                    st.progress(progress_percent / 100)
+                    st.caption(f"📊 {progress_percent:.1f}% terminé")
+
+                st.info("💡 L'extraction continue en arrière-plan. Les données sont sauvegardées en temps réel.")
+            else:
+                st.success("✅ **Session d'extraction précédente terminée**")
+
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric(
+                        "Hôtels traités",
+                        stats.get('total_hotels', 0)
+                    )
+                with col2:
+                    st.metric(
+                        "Réussis",
+                        stats.get('completed', 0)
+                    )
+                with col3:
+                    st.metric(
+                        "Échecs",
+                        stats.get('failed', 0)
+                    )
+
+                st.info("📥 Consultez l'onglet **Exports** pour télécharger vos CSV")
+
+        except Exception as e:
+            if in_progress:
+                st.info("🔄 Extraction en cours détectée - Reprise du suivi...")
+            else:
+                st.success("✅ Extraction précédente terminée - Consultez l'onglet Exports")
 
     def _cleanup_failed_session(self):
         """Nettoie une session échouée"""
