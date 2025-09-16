@@ -359,7 +359,7 @@ class ExportsPage:
         try:
             result = self.db_service.client.client.table("extraction_sessions")\
                 .select("*")\
-                .order("created_at", desc=True)\
+                .order("upload_date", desc=True)\
                 .limit(10)\
                 .execute()
 
@@ -375,7 +375,7 @@ class ExportsPage:
             col1, col2, col3 = st.columns([3, 2, 2])
 
             with col1:
-                session_date = session.get('created_at', '')[:19].replace('T', ' ')
+                session_date = session.get('upload_date', '')[:19].replace('T', ' ')
                 st.markdown(f"### 🗓️ {session_date}")
                 st.caption(f"**Fichier:** {session.get('csv_filename', 'N/A')}")
 
@@ -402,49 +402,120 @@ class ExportsPage:
             st.markdown("---")
 
     def _render_export_buttons(self, session_id):
-        """Affiche les boutons d'export pour une session"""
+        """Affiche les boutons d'export pour une session avec diagnostics détaillés"""
+        # D'abord, diagnostiquer l'état des données
+        data_status = self._diagnose_session_data(session_id)
+
+        # Afficher le diagnostic à l'utilisateur
+        if not data_status['has_hotels']:
+            st.error("❌ **Aucun hôtel trouvé dans cette session**")
+            st.caption("💡 Cette session semble vide ou corrompue")
+            return
+
+        if not data_status['has_rooms']:
+            st.warning("⚠️ **Aucune salle de réunion extraite**")
+            if data_status['total_hotels'] > 0:
+                st.caption(f"📊 {data_status['total_hotels']} hôtels trouvés, mais aucune salle détectée")
+                st.caption("💡 Vérifiez si l'extraction Cvent a fonctionné correctement")
+        else:
+            st.info(f"📊 **{data_status['total_hotels']} hôtels** | **{data_status['total_rooms']} salles**")
+
         col1, col2 = st.columns(2)
 
         try:
-            # Générer les CSV
-            csv_complete = self._generate_csv_from_view(session_id, include_empty_rooms=True)
-            csv_rooms_only = self._generate_csv_from_view(session_id, include_empty_rooms=False)
-
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
+            # Export complet - toujours disponible s'il y a des hôtels
             with col1:
-                if csv_complete:
-                    st.download_button(
-                        label="📊 Export Complet",
-                        data=csv_complete,
-                        file_name=f"export_complet_{session_id[:8]}_{timestamp}.csv",
-                        mime="text/csv",
-                        key=f"complete_{session_id}",
-                        use_container_width=True,
-                        help="Toutes les données: Cvent + Google Maps + Website"
-                    )
+                if data_status['has_hotels']:
+                    csv_complete = self._generate_csv_from_view(session_id, include_empty_rooms=True)
+                    if csv_complete:
+                        st.download_button(
+                            label="📊 Export Complet",
+                            data=csv_complete,
+                            file_name=f"export_complet_{session_id[:8]}_{timestamp}.csv",
+                            mime="text/csv",
+                            key=f"complete_{session_id}",
+                            use_container_width=True,
+                            type="primary",
+                            help=f"Tous les hôtels ({data_status['total_hotels']} hôtels)"
+                        )
+                    else:
+                        st.error("❌ Échec génération CSV complet")
                 else:
                     st.button("📊 Export Complet", disabled=True, use_container_width=True)
                     st.caption("Aucune donnée")
 
+            # Export salles seulement
             with col2:
-                if csv_rooms_only:
-                    st.download_button(
-                        label="🏢 Export Salles",
-                        data=csv_rooms_only,
-                        file_name=f"salles_seulement_{session_id[:8]}_{timestamp}.csv",
-                        mime="text/csv",
-                        key=f"rooms_{session_id}",
-                        use_container_width=True,
-                        type="secondary",
-                        help="Uniquement les hôtels avec salles de réunion"
-                    )
+                if data_status['has_rooms']:
+                    csv_rooms_only = self._generate_csv_from_view(session_id, include_empty_rooms=False)
+                    if csv_rooms_only:
+                        st.download_button(
+                            label="🏢 Export Salles",
+                            data=csv_rooms_only,
+                            file_name=f"salles_seulement_{session_id[:8]}_{timestamp}.csv",
+                            mime="text/csv",
+                            key=f"rooms_{session_id}",
+                            use_container_width=True,
+                            type="secondary",
+                            help=f"Hôtels avec salles ({data_status['total_rooms']} salles)"
+                        )
+                    else:
+                        st.error("❌ Échec génération CSV salles")
                 else:
                     st.button("🏢 Export Salles", disabled=True, use_container_width=True)
-                    st.caption("Aucune salle")
+                    st.caption("Aucune salle disponible")
 
         except Exception as e:
-            st.error(f"❌ Erreur génération CSV: {e}")
+            st.error(f"❌ Erreur génération CSV: {str(e)}")
+            # Afficher plus de détails pour le debugging
+            st.caption(f"💾 Debug: Session {session_id[:8]} - {data_status['total_hotels']} hôtels, {data_status['total_rooms']} salles")
+
+    def _diagnose_session_data(self, session_id):
+        """Diagnostique l'état des données pour une session"""
+        try:
+            # Compter les hôtels
+            hotels_result = self.db_service.client.client.table("hotels")\
+                .select("id", count="exact")\
+                .eq("session_id", session_id)\
+                .execute()
+
+            total_hotels = hotels_result.count or 0
+
+            # Compter les salles si il y a des hôtels
+            total_rooms = 0
+            if total_hotels > 0:
+                # Récupérer les IDs des hôtels
+                hotels_ids_result = self.db_service.client.client.table("hotels")\
+                    .select("id")\
+                    .eq("session_id", session_id)\
+                    .execute()
+
+                hotel_ids = [h['id'] for h in hotels_ids_result.data]
+
+                if hotel_ids:
+                    rooms_result = self.db_service.client.client.table("meeting_rooms")\
+                        .select("id", count="exact")\
+                        .in_("hotel_id", hotel_ids)\
+                        .execute()
+                    total_rooms = rooms_result.count or 0
+
+            return {
+                'has_hotels': total_hotels > 0,
+                'has_rooms': total_rooms > 0,
+                'total_hotels': total_hotels,
+                'total_rooms': total_rooms
+            }
+
+        except Exception as e:
+            st.error(f"❌ Erreur diagnostic: {e}")
+            return {
+                'has_hotels': False,
+                'has_rooms': False,
+                'total_hotels': 0,
+                'total_rooms': 0
+            }
 
     def _generate_csv_from_view(self, session_id, include_empty_rooms=True):
         """Génère le CSV depuis la vue consolidée"""

@@ -346,19 +346,46 @@ class DatabaseService:
             success: Si la session s'est terminée avec succès
         """
         try:
-            status = "completed" if success else "failed"
+            # Récupérer le nombre réel d'hôtels dans la DB
+            actual_hotels = self.client.client.table("hotels").select("*").eq("session_id", session_id).execute()
+            actual_count = len(actual_hotels.data)
 
-            # Récupérer le nombre d'hôtels traités
-            stats = self.get_session_statistics(session_id)
-            processed = stats.get('completed', 0) + stats.get('failed', 0)
+            # Récupérer la session actuelle
+            session_data = self.client.client.table("extraction_sessions").select("*").eq("id", session_id).execute()
+            if not session_data.data:
+                logger.error(f"Session {session_id} introuvable")
+                return
 
-            self.client.update_session_status(
-                session_id=session_id,
-                status=status,
-                processed_hotels=processed
-            )
+            current_session = session_data.data[0]
+            declared_total = current_session.get('total_hotels', 0)
 
-            logger.info(f"Session {session_id} finalisée: {status}")
+            # Détecter les incohérences
+            if actual_count != declared_total:
+                logger.warning(f"Incohérence détectée: {actual_count} hôtels réels vs {declared_total} déclarés")
+                # Corriger automatiquement en prenant la réalité
+                status = "completed" if success and actual_count > 0 else "failed"
+                self.client.update_session_status(
+                    session_id=session_id,
+                    status=status,
+                    processed_hotels=actual_count
+                )
+                # Mettre à jour le total pour correspondre à la réalité
+                self.client.client.table("extraction_sessions").update({
+                    'total_hotels': actual_count
+                }).eq('id', session_id).execute()
+                logger.info(f"Session {session_id} corrigée: {actual_count} hôtels réels")
+            else:
+                # Pas d'incohérence, finalisation normale
+                status = "completed" if success else "failed"
+                stats = self.get_session_statistics(session_id)
+                processed = stats.get('completed', 0) + stats.get('failed', 0)
+                self.client.update_session_status(
+                    session_id=session_id,
+                    status=status,
+                    processed_hotels=processed
+                )
+                logger.info(f"Session {session_id} finalisée normalement: {status}")
+
         except Exception as e:
             logger.error(f"Erreur finalisation session: {e}")
 
