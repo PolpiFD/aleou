@@ -136,101 +136,78 @@ class ParallelHotelProcessorDB:
             total_success = 0
             total_errors = 0
 
-            # Traiter chaque batch séquentiellement
-            for batch_index, batch in enumerate(batches):
-                logger.info(f"🚀 DÉBUT batch {batch_index + 1}/{len(batches)}: {len(batch)} hôtels")
-                print(f"\n📦 Batch {batch_index + 1}/{len(batches)}: {len(batch)} hôtels")
+            # 🚀 VRAIE PARALLÉLISATION DES BATCHES
+            print(f"🚀 Lancement parallèle de {len(batches)} batches avec max {self.config.max_workers} simultanés")
+            logger.info(f"🚀 Traitement parallèle: {len(batches)} batches, max_workers={self.config.max_workers}")
 
-                # Insérer les hôtels du batch dans la DB
-                hotel_ids = self.db_service.prepare_hotels_batch(
-                    session_id, batch
-                )
+            # Créer et lancer les tâches de batches avec limitation
+            active_tasks = []
+            batch_queue = list(enumerate(batches))
+            completed_batches = 0
 
-                # Enrichir avec les IDs DB
-                for i, hotel in enumerate(batch):
-                    if i < len(hotel_ids):
-                        hotel['hotel_id'] = hotel_ids[i]
+            while batch_queue or active_tasks:
+                # Lancer de nouveaux batches si on n'a pas atteint la limite
+                while len(active_tasks) < self.config.max_workers and batch_queue:
+                    batch_index, batch = batch_queue.pop(0)
 
-                # Traiter le batch
-                batch_results = await self._process_batch(
-                    batch,
-                    extract_cvent,
-                    extract_gmaps,
-                    extract_website,
-                    progress_callback
-                )
-
-                # Sauvegarder en DB avec protection contre les crashes ET timeout
-                logger.info(f"🔍 AVANT process_batch_results - Batch {batch_index + 1}")
-                logger.info(f"💾 Sauvegarde batch {batch_index + 1} en DB...")
-                try:
-                    logger.info(f"🔍 Appel process_batch_results avec {len(batch_results)} résultats")
-                    # 🕰️ Timeout de 60s pour éviter le blocage
-                    success, errors = await asyncio.wait_for(
-                        asyncio.get_event_loop().run_in_executor(
-                            None,
-                            lambda: self.db_service.process_batch_results(batch_results)
-                        ),
-                        timeout=60.0
+                    # Créer la tâche pour ce batch
+                    task = asyncio.create_task(
+                        self._process_and_save_batch(
+                            batch_index,
+                            batch,
+                            session_id,
+                            extract_cvent,
+                            extract_gmaps,
+                            extract_website,
+                            progress_callback
+                        )
                     )
-                    logger.info(f"🔍 RETOUR process_batch_results: {success} succès, {errors} erreurs")
-                    total_success += success
-                    total_errors += errors
-                    logger.info(f"✅ Batch {batch_index + 1} sauvegardé: {success} succès, {errors} échecs")
-                except asyncio.TimeoutError:
-                    logger.error(f"🕰️ TIMEOUT process_batch_results batch {batch_index + 1} (60s dépassé)")
-                    print(f"⚠️ Timeout sauvegarde batch {batch_index + 1} - session peut être bloquée")
-                    # Compter comme des erreurs
-                    total_errors += len(batch_results)
-                except Exception as batch_db_error:
-                    logger.error(f"❌ ERREUR critique sauvegarde batch {batch_index + 1}: {batch_db_error}")
-                    print(f"❌ Erreur sauvegarde batch {batch_index + 1}: {batch_db_error}")
-                    # Compter tous les hôtels du batch comme échoués
-                    total_errors += len(batch)
-                    # IMPORTANT: Ne pas crasher, continuer avec le batch suivant
+                    active_tasks.append((task, batch_index + 1))
+                    logger.info(f"🚀 Lancement batch {batch_index + 1} en parallèle")
 
-                # Mettre à jour l'activité après chaque batch pour éviter watchdog
-                try:
-                    self.db_service.client.update_session_activity(session_id)
-                    logger.debug(f"Session {session_id}: activité mise à jour après batch {batch_index + 1}")
-                except Exception as e:
-                    logger.warning(f"Erreur MAJ activité batch: {e}")
+                # Attendre qu'au moins une tâche se termine
+                if active_tasks:
+                    done_tasks, pending_tasks = await asyncio.wait(
+                        [task for task, _ in active_tasks],
+                        return_when=asyncio.FIRST_COMPLETED
+                    )
 
-                # Callback de progression
-                if progress_callback:
-                    stats = self.progress_reporter.get_stats()
-                    stats['batch_completed'] = batch_index + 1
-                    stats['total_batches'] = len(batches)
-                    await self._safe_callback(progress_callback, stats)
+                    # Traiter les tâches terminées
+                    remaining_tasks = []
+                    for task, batch_num in active_tasks:
+                        if task in done_tasks:
+                            try:
+                                result = await task
+                                total_success += result['success']
+                                total_errors += result['errors']
+                                completed_batches += 1
+                                logger.info(f"✅ Batch {batch_num} terminé: {result['success']} succès, {result['errors']} erreurs")
+                                print(f"🏁 Batch {batch_num} fini ({completed_batches}/{len(batches)})")
+                            except Exception as task_error:
+                                logger.error(f"❌ Erreur tâche batch {batch_num}: {task_error}")
+                                total_errors += 10  # Estimer le nombre d'hôtels par batch
+                                completed_batches += 1
+                        else:
+                            remaining_tasks.append((task, batch_num))
 
-                # Log de fin de batch
-                logger.info(f"✅ FIN batch {batch_index + 1}/{len(batches)} - Passage au suivant...")
-                print(f"✅ Batch {batch_index + 1} terminé, passage au suivant...")
+                    active_tasks = remaining_tasks
 
-            # Finaliser la session avec timeout
+            print(f"🎉 TOUS les batches terminés: {total_success} succès, {total_errors} erreurs")
+
+            # Finaliser la session
             logger.info(f"🔍 AVANT finalize_session - Session {session_id}")
             logger.info(f"🏁 Finalisation session {session_id}: {total_success} succès, {total_errors} erreurs")
             print(f"🏁 Finalisation session: {total_success} succès, {total_errors} erreurs")
 
             try:
                 logger.info(f"🔍 Appel finalize_session(session_id={session_id}, success={total_errors == 0})")
-                # 🕰️ Timeout de 30s pour éviter le blocage
-                await asyncio.wait_for(
-                    asyncio.get_event_loop().run_in_executor(
-                        None,
-                        lambda: self.db_service.finalize_session(
-                            session_id,
-                            success=(total_errors == 0)
-                        )
-                    ),
-                    timeout=30.0
+                # Appel direct sans run_in_executor
+                self.db_service.finalize_session(
+                    session_id,
+                    success=(total_errors == 0)
                 )
                 logger.info(f"🔍 RETOUR finalize_session - SUCCESS")
                 print(f"✅ Session {session_id} finalisée avec succès")
-            except asyncio.TimeoutError:
-                logger.error(f"🕰️ TIMEOUT finalize_session pour session {session_id} (30s dépassé)")
-                print(f"⚠️ Timeout finalisation session {session_id} - session peut rester bloquée")
-                # Ne pas lever l'exception, permettre au processus de continuer
             except Exception as e:
                 logger.error(f"🔍 ERREUR dans finalize_session: {e}")
                 logger.error(f"❌ Erreur finalisation session: {e}")
@@ -274,6 +251,84 @@ class ParallelHotelProcessorDB:
         finally:
             # Fermer proprement les executors
             self._shutdown_executors()
+
+    async def _process_and_save_batch(
+        self,
+        batch_index: int,
+        batch: List[Dict],
+        session_id: str,
+        extract_cvent: bool,
+        extract_gmaps: bool,
+        extract_website: bool,
+        progress_callback: Optional[Callable]
+    ) -> Dict[str, int]:
+        """Traite un batch de manière autonome avec préparation, extraction et sauvegarde
+
+        Args:
+            batch_index: Index du batch (pour logging)
+            batch: Liste des hôtels à traiter
+            session_id: ID de la session
+            extract_cvent, extract_gmaps, extract_website: Options d'extraction
+            progress_callback: Callback de progression
+
+        Returns:
+            Dict[str, int]: {'success': X, 'errors': Y}
+        """
+        batch_num = batch_index + 1
+        logger.info(f"🚀 DÉBUT batch {batch_num}: {len(batch)} hôtels")
+        print(f"\n📦 Batch {batch_num}: {len(batch)} hôtels")
+
+        try:
+            # 1. Préparer les hôtels dans la DB
+            hotel_ids = self.db_service.prepare_hotels_batch(session_id, batch)
+
+            # 2. Enrichir avec les IDs DB
+            for i, hotel in enumerate(batch):
+                if i < len(hotel_ids):
+                    hotel['hotel_id'] = hotel_ids[i]
+
+            # 3. Traiter le batch (extraction)
+            batch_results = await self._process_batch(
+                batch,
+                extract_cvent,
+                extract_gmaps,
+                extract_website,
+                progress_callback
+            )
+
+            # 4. Sauvegarder en DB
+            logger.info(f"🔍 AVANT process_batch_results - Batch {batch_num}")
+            logger.info(f"💾 Sauvegarde batch {batch_num} en DB...")
+
+            logger.info(f"🔍 Appel process_batch_results avec {len(batch_results)} résultats")
+            success, errors = self.db_service.process_batch_results(batch_results)
+            logger.info(f"🔍 RETOUR process_batch_results: {success} succès, {errors} erreurs")
+            logger.info(f"✅ Batch {batch_num} sauvegardé: {success} succès, {errors} échecs")
+
+            # 5. Mettre à jour l'activité après chaque batch pour éviter watchdog
+            try:
+                self.db_service.client.update_session_activity(session_id)
+                logger.debug(f"Session {session_id}: activité mise à jour après batch {batch_num}")
+            except Exception as e:
+                logger.warning(f"Erreur MAJ activité batch: {e}")
+
+            # 6. Callback de progression
+            if progress_callback:
+                stats = self.progress_reporter.get_stats()
+                stats['batch_completed'] = batch_num
+                await self._safe_callback(progress_callback, stats)
+
+            # Log de fin de batch
+            logger.info(f"✅ FIN batch {batch_num} - SUCCESS")
+            print(f"✅ Batch {batch_num} terminé: {success} succès, {errors} échecs")
+
+            return {'success': success, 'errors': errors}
+
+        except Exception as batch_error:
+            logger.error(f"❌ ERREUR critique batch {batch_num}: {batch_error}")
+            print(f"❌ Erreur batch {batch_num}: {batch_error}")
+            # Compter tous les hôtels du batch comme échoués
+            return {'success': 0, 'errors': len(batch)}
 
     def _shutdown_executors(self):
         """Ferme proprement tous les executors partagés"""
