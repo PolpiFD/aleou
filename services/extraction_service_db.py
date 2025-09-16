@@ -395,81 +395,47 @@ class ExtractionServiceDB:
 
         st.subheader("📥 Options d'export")
 
-        col1, col2 = st.columns(2)
-
-        with col1:
-            if st.button("📊 Export Complet (Cvent + Google Maps + Website)", use_container_width=True):
-                self.session_id = session_to_use  # Restaurer la session_id
-                self._export_complete_csv()
-
-        with col2:
-            if st.button("🏢 Export Salles Uniquement", use_container_width=True):
-                self.session_id = session_to_use  # Restaurer la session_id
-                self._export_rooms_only_csv()
-
-    def _export_complete_csv(self):
-        """Exporte le CSV complet avec toutes les données consolidées"""
-        if not self.session_id:
-            st.error("❌ Aucune session active")
-            return
-
+        # Générer directement les CSV et les proposer en téléchargement
         try:
-            with st.spinner("Génération du CSV complet (Cvent + Google Maps + Website)..."):
-                csv_content = self.db_service.export_session_to_csv(
-                    session_id=self.session_id,
-                    include_empty_rooms=True
-                )
+            # CSV Complet
+            csv_complete = self.db_service.export_session_to_csv(
+                session_id=session_to_use,
+                include_empty_rooms=True
+            )
 
-                # Générer nom de fichier
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                filename = f"extraction_complete_{timestamp}.csv"
+            # CSV Salles uniquement
+            csv_rooms_only = self.db_service.export_session_to_csv(
+                session_id=session_to_use,
+                include_empty_rooms=False
+            )
 
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+            col1, col2 = st.columns(2)
+
+            with col1:
                 st.download_button(
-                    label="📥 Télécharger CSV Complet",
-                    data=csv_content,
-                    file_name=filename,
+                    label="📊 Export Complet (Cvent + Google Maps + Website)",
+                    data=csv_complete,
+                    file_name=f"export_complet_{timestamp}.csv",
                     mime="text/csv",
-                    type="primary",
+                    key=f"export_complete_{session_to_use}",
                     use_container_width=True
                 )
 
-                st.success("✅ CSV complet prêt pour téléchargement")
-                st.info("💡 Ce CSV inclut toutes les données: Cvent, Google Maps et Website LLM")
+            with col2:
+                st.download_button(
+                    label="🏢 Export Salles Uniquement",
+                    data=csv_rooms_only,
+                    file_name=f"salles_uniquement_{timestamp}.csv",
+                    mime="text/csv",
+                    key=f"export_rooms_{session_to_use}",
+                    use_container_width=True
+                )
 
         except Exception as e:
             st.error(f"❌ Erreur génération CSV: {e}")
 
-    def _export_rooms_only_csv(self):
-        """Exporte uniquement les salles de réunion en CSV"""
-        if not self.session_id:
-            st.error("❌ Aucune session active")
-            return
-
-        try:
-            with st.spinner("Génération du CSV des salles uniquement..."):
-                csv_content = self.db_service.export_session_to_csv(
-                    session_id=self.session_id,
-                    include_empty_rooms=False  # Seules les salles
-                )
-
-                # Générer nom de fichier
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                filename = f"salles_seulement_{timestamp}.csv"
-
-                st.download_button(
-                    label="📥 Télécharger CSV Salles Uniquement",
-                    data=csv_content,
-                    file_name=filename,
-                    mime="text/csv",
-                    type="secondary",
-                    use_container_width=True
-                )
-
-                st.success("✅ CSV des salles prêt pour téléchargement")
-                st.info("💡 Ce CSV contient uniquement les hôtels avec salles de réunion")
-
-        except Exception as e:
-            st.error(f"❌ Erreur génération CSV: {e}")
 
     def _generate_partial_csv_download(self):
         """Génère et propose le téléchargement du CSV partiel"""
