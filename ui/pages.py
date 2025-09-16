@@ -372,6 +372,77 @@ class ExportsPage:
             st.warning(f"⚠️ Watchdog des sessions: {str(e)}")
             return 0
 
+    def _render_failed_session_export(self, session_id):
+        """Gère l'export pour les sessions échouées avec données partielles"""
+        # Diagnostiquer s'il y a des données récupérables
+        data_status = self._diagnose_session_data(session_id)
+
+        if not data_status['has_hotels']:
+            st.error("❌ **Session échouée sans données récupérables**")
+            st.caption("💡 Cette session n'a produit aucune donnée exploitable")
+            return
+
+        # Il y a des données partielles !
+        st.warning(f"⚠️ **Session échouée avec données partielles récupérables**")
+        st.info(f"📊 **{data_status['total_hotels']} hôtels traités** avant l'échec | **{data_status['total_rooms']} salles extraites**")
+
+        if data_status['has_rooms']:
+            st.caption("💡 Données partielles disponibles - Vous pouvez récupérer ce qui a été extrait")
+        else:
+            st.caption("💡 Hôtels traités mais aucune salle trouvée - Export des données hôtels disponible")
+
+        # Utiliser la même logique d'export que pour les sessions normales
+        col1, col2 = st.columns(2)
+
+        try:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+            # Export complet (données partielles)
+            with col1:
+                if data_status['has_hotels']:
+                    csv_complete = self._generate_csv_from_view(session_id, include_empty_rooms=True)
+                    if csv_complete:
+                        st.download_button(
+                            label="📊 Récupérer données partielles",
+                            data=csv_complete,
+                            file_name=f"donnees_partielles_{session_id[:8]}_{timestamp}.csv",
+                            mime="text/csv",
+                            key=f"failed_complete_{session_id}",
+                            use_container_width=True,
+                            type="primary",
+                            help=f"Données récupérées: {data_status['total_hotels']} hôtels traités"
+                        )
+                    else:
+                        st.error("❌ Impossible de générer le CSV partiel")
+                else:
+                    st.button("📊 Récupérer données partielles", disabled=True, use_container_width=True)
+                    st.caption("Aucune donnée")
+
+            # Export salles seulement (si disponible)
+            with col2:
+                if data_status['has_rooms']:
+                    csv_rooms_only = self._generate_csv_from_view(session_id, include_empty_rooms=False)
+                    if csv_rooms_only:
+                        st.download_button(
+                            label="🏢 Salles récupérées",
+                            data=csv_rooms_only,
+                            file_name=f"salles_partielles_{session_id[:8]}_{timestamp}.csv",
+                            mime="text/csv",
+                            key=f"failed_rooms_{session_id}",
+                            use_container_width=True,
+                            type="secondary",
+                            help=f"Salles récupérées: {data_status['total_rooms']} salles"
+                        )
+                    else:
+                        st.error("❌ Impossible de générer le CSV salles")
+                else:
+                    st.button("🏢 Salles récupérées", disabled=True, use_container_width=True)
+                    st.caption("Aucune salle récupérée")
+
+        except Exception as e:
+            st.error(f"❌ Erreur récupération données partielles: {str(e)}")
+            st.caption(f"💾 Debug: Session {session_id[:8]} - Tentative de récupération échouée")
+
     def _get_recent_sessions(self):
         """Récupère les 10 dernières sessions d'extraction"""
         try:
@@ -411,11 +482,14 @@ class ExportsPage:
                 }.get(status, '❓')
                 st.metric("Statut", f"{status_emoji} {status.title()}")
 
-            # Boutons d'export
+            # Boutons d'export - Permettre l'export même pour les sessions failed s'il y a des données
             if status in ['completed', 'processing']:
                 self._render_export_buttons(session['id'])
+            elif status == 'failed':
+                # Vérifier s'il y a des données partielles récupérables
+                self._render_failed_session_export(session['id'])
             else:
-                st.warning("⚠️ Session échouée - Exports non disponibles")
+                st.warning("⚠️ Session dans un état inconnu - Exports non disponibles")
 
             st.markdown("---")
 
