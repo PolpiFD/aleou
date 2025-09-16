@@ -23,9 +23,8 @@ class WebsiteExtractor:
         self.website_finder = WebsiteFinder()
         # 🔥 Nouveau processeur unifié (Firecrawl + Legacy)
         self.website_processor = None
-        
-        # Session aiohttp pour fallback simple
-        self.session = None
+
+        # ✅ Plus de session globale - sessions temporaires seulement
     
     async def extract_hotel_website_data(self, hotel_name: str, hotel_address: str, 
                                        gmaps_website: str = None) -> Dict[str, Any]:
@@ -142,59 +141,58 @@ class WebsiteExtractor:
     
     async def _simple_aiohttp_scrape(self, url: str, hotel_name: str) -> Dict[str, Any]:
         """Scraping simple avec aiohttp + BeautifulSoup (remplace Playwright)"""
-        
-        if self.session is None:
-            self.session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=30),
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                }
-            )
-        
+
+        # ✅ Session temporaire avec context manager - Fix connexions orphelines
+        timeout = aiohttp.ClientTimeout(total=30)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+
         try:
-            async with self.session.get(url) as response:
-                if response.status != 200:
+            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+                async with session.get(url) as response:
+                    if response.status != 200:
+                        return {
+                            'success': False,
+                            'error': f'HTTP {response.status}',
+                            'text_content': '',
+                            'image_urls': []
+                        }
+
+                    html_content = await response.text()
+
+                    # Parser avec BeautifulSoup
+                    soup = BeautifulSoup(html_content, 'html.parser')
+
+                    # Supprimer scripts et styles
+                    for script in soup(["script", "style"]):
+                        script.decompose()
+
+                    # Extraire le texte
+                    text_content = soup.get_text()
+
+                    # Nettoyer le texte
+                    lines = (line.strip() for line in text_content.splitlines())
+                    chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+                    text_content = ' '.join(chunk for chunk in chunks if chunk)
+
+                    # Extraire les images
+                    images = soup.find_all('img')
+                    image_urls = []
+                    for img in images[:10]:  # Limiter à 10 images
+                        src = img.get('src')
+                        if src and src.startswith(('http', '/')):
+                            if src.startswith('/'):
+                                from urllib.parse import urljoin
+                                src = urljoin(url, src)
+                            image_urls.append(src)
+
                     return {
-                        'success': False,
-                        'error': f'HTTP {response.status}',
-                        'text_content': '',
-                        'image_urls': []
+                        'success': True,
+                        'text_content': text_content,
+                        'image_urls': image_urls,
+                        'error': None
                     }
-                
-                html_content = await response.text()
-                
-                # Parser avec BeautifulSoup
-                soup = BeautifulSoup(html_content, 'html.parser')
-                
-                # Supprimer scripts et styles
-                for script in soup(["script", "style"]):
-                    script.decompose()
-                
-                # Extraire le texte
-                text_content = soup.get_text()
-                
-                # Nettoyer le texte
-                lines = (line.strip() for line in text_content.splitlines())
-                chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-                text_content = ' '.join(chunk for chunk in chunks if chunk)
-                
-                # Extraire les images
-                images = soup.find_all('img')
-                image_urls = []
-                for img in images[:10]:  # Limiter à 10 images
-                    src = img.get('src')
-                    if src and src.startswith(('http', '/')):
-                        if src.startswith('/'):
-                            from urllib.parse import urljoin
-                            src = urljoin(url, src)
-                        image_urls.append(src)
-                
-                return {
-                    'success': True,
-                    'text_content': text_content,
-                    'image_urls': image_urls,
-                    'error': None
-                }
                 
         except Exception as e:
             return {
@@ -207,11 +205,10 @@ class WebsiteExtractor:
     async def __aenter__(self):
         """Context manager entry"""
         return self
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit"""
-        if self.session:
-            await self.session.close()
+        """Context manager exit - Plus de session globale à fermer"""
+        pass  # Sessions temporaires se ferment automatiquement
     
     
     async def extract_hotels_batch(self, hotels_info: List[Dict[str, str]]) -> List[Dict[str, Any]]:

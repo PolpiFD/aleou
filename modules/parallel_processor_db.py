@@ -162,12 +162,28 @@ class ParallelHotelProcessorDB:
                     active_tasks.append((task, batch_index + 1))
                     logger.info(f"🚀 Lancement batch {batch_index + 1} en parallèle")
 
-                # Attendre qu'au moins une tâche se termine
+                # Attendre qu'au moins une tâche se termine avec timeout global
                 if active_tasks:
-                    done_tasks, pending_tasks = await asyncio.wait(
-                        [task for task, _ in active_tasks],
-                        return_when=asyncio.FIRST_COMPLETED
-                    )
+                    try:
+                        done_tasks, pending_tasks = await asyncio.wait(
+                            [task for task, _ in active_tasks],
+                            return_when=asyncio.FIRST_COMPLETED,
+                            timeout=300  # 5 minutes max - Force progression si batch bloqué
+                        )
+
+                        # Si timeout, forcer la progression en annulant les tâches lentes
+                        if not done_tasks and pending_tasks:
+                            logger.warning(f"⚠️ Timeout 300s atteint - Annulation tâches lentes pour débloquer progression")
+                            for task in pending_tasks:
+                                task.cancel()
+                            # Considérer les tâches annulées comme terminées avec erreur
+                            done_tasks = pending_tasks
+                            pending_tasks = set()
+
+                    except asyncio.TimeoutError:
+                        logger.warning(f"⚠️ Timeout asyncio.wait - Progression forcée")
+                        done_tasks = set([task for task, _ in active_tasks])
+                        pending_tasks = set()
 
                     # Traiter les tâches terminées
                     remaining_tasks = []
@@ -572,16 +588,17 @@ class ParallelHotelProcessorDB:
         from .website_extractor import WebsiteExtractor
 
         try:
-            extractor = WebsiteExtractor()
-            result = await asyncio.wait_for(
-                extractor.extract_hotel_website_data(
-                    hotel_data['name'],
-                    hotel_data.get('address', ''),
-                    website_url
-                ),
-                timeout=self.config.website_timeout
-            )
-            return result
+            # ✅ Utiliser context manager pour garantir fermeture des connexions
+            async with WebsiteExtractor() as extractor:
+                result = await asyncio.wait_for(
+                    extractor.extract_hotel_website_data(
+                        hotel_data['name'],
+                        hotel_data.get('address', ''),
+                        website_url
+                    ),
+                    timeout=self.config.website_timeout
+                )
+                return result
         except asyncio.TimeoutError:
             raise Exception(f"Timeout Website ({self.config.website_timeout}s)")
 
