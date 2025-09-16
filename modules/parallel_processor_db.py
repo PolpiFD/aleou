@@ -247,6 +247,7 @@ class ParallelHotelProcessorDB:
 
         finally:
             # Plus besoin de fermer les executors - pattern temporaire auto-cleanup
+            pass
 
     async def _process_and_save_batch(
         self,
