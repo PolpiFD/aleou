@@ -118,6 +118,13 @@ class ParallelHotelProcessorDB:
         logger.info(f"🚀 Démarrage: {len(hotels_data)} hôtels, session {session_id}")
         print(f"🚀 Traitement de {len(hotels_data)} hôtels par batch de {self.config.batch_size}")
 
+        # Mettre à jour l'activité au démarrage pour éviter watchdog pendant extraction
+        try:
+            self.db_service.client.update_session_activity(session_id)
+            logger.debug(f"Session {session_id}: activité mise à jour au démarrage")
+        except Exception as e:
+            logger.warning(f"Erreur MAJ activité démarrage: {e}")
+
         try:
             # Créer les batches
             batches = self._create_batches(hotels_data)
@@ -153,6 +160,13 @@ class ParallelHotelProcessorDB:
                 )
                 total_success += success
                 total_errors += errors
+
+                # Mettre à jour l'activité après chaque batch pour éviter watchdog
+                try:
+                    self.db_service.client.update_session_activity(session_id)
+                    logger.debug(f"Session {session_id}: activité mise à jour après batch {batch_index + 1}")
+                except Exception as e:
+                    logger.warning(f"Erreur MAJ activité batch: {e}")
 
                 # Callback de progression
                 if progress_callback:

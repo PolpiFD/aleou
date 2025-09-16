@@ -342,8 +342,21 @@ class ExportsPage:
             st.error("❌ Service de base de données non disponible")
             return
 
-        # Lancer automatiquement le watchdog au chargement de la page
-        watchdog_result = self._run_session_watchdog()
+        # Le watchdog n'est plus lancé automatiquement pour éviter l'interférence
+        # avec les extractions en cours. Il y a maintenant un bouton manuel.
+
+        # Bouton manuel pour le watchdog
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("🔄 Vérifier sessions bloquées",
+                        help="Détecte et corrige les sessions qui ont planté ou se sont figées",
+                        use_container_width=True):
+                with st.spinner("Vérification des sessions..."):
+                    watchdog_result = self._run_session_watchdog()
+                    if watchdog_result == 0:
+                        st.success("✅ Aucune session bloquée détectée")
+                    # Les autres messages sont déjà affichés par _run_session_watchdog()
+                st.rerun()  # Recharger la page pour voir les changements
 
         # Récupérer les 10 dernières sessions
         sessions = self._get_recent_sessions()
@@ -468,6 +481,36 @@ class ExportsPage:
                 st.markdown(f"### 🗓️ {session_date}")
                 st.caption(f"**Fichier:** {session.get('csv_filename', 'N/A')}")
 
+                # Afficher last_activity si disponible
+                last_activity = session.get('last_activity')
+                if last_activity:
+                    try:
+                        from datetime import datetime
+                        activity_dt = datetime.fromisoformat(last_activity.replace('Z', '+00:00'))
+                        current_time = datetime.now()
+
+                        # Si c'est un timestamp UTC
+                        if '+' in last_activity or 'Z' in last_activity:
+                            from datetime import timezone
+                            current_time = datetime.now(timezone.utc)
+
+                        time_diff = current_time - activity_dt
+                        minutes_ago = int(time_diff.total_seconds() / 60)
+
+                        if minutes_ago < 2:
+                            st.caption("🟢 **Activité:** Active maintenant")
+                        elif minutes_ago < 5:
+                            st.caption(f"🟡 **Activité:** Il y a {minutes_ago}min")
+                        elif minutes_ago < 15:
+                            st.caption(f"🟠 **Activité:** Il y a {minutes_ago}min")
+                        else:
+                            st.caption(f"🔴 **Activité:** Il y a {minutes_ago}min")
+
+                    except Exception as e:
+                        st.caption(f"⚪ **Activité:** {last_activity[:16]}")
+                else:
+                    st.caption("⚪ **Activité:** Inconnue")
+
             with col2:
                 total_hotels = session.get('total_hotels', 0)
                 processed = session.get('processed_hotels', 0)
@@ -480,7 +523,40 @@ class ExportsPage:
                     'processing': '⏳',
                     'failed': '❌'
                 }.get(status, '❓')
-                st.metric("Statut", f"{status_emoji} {status.title()}")
+
+                # Affichage intelligent du statut
+                if status == 'processing':
+                    # Vérifier si vraiment en cours avec last_activity
+                    last_activity = session.get('last_activity')
+                    if last_activity:
+                        try:
+                            from datetime import datetime
+                            activity_dt = datetime.fromisoformat(last_activity.replace('Z', '+00:00'))
+                            current_time = datetime.now()
+                            if '+' in last_activity or 'Z' in last_activity:
+                                from datetime import timezone
+                                current_time = datetime.now(timezone.utc)
+
+                            time_diff = current_time - activity_dt
+                            minutes_ago = int(time_diff.total_seconds() / 60)
+
+                            if minutes_ago < 3:
+                                st.metric("Statut", "🔄 En cours")
+                                st.caption("Extraction active")
+                            else:
+                                st.metric("Statut", "⚠️ Potentiellement bloquée")
+                                st.caption(f"Inactif {minutes_ago}min")
+                        except:
+                            st.metric("Statut", f"{status_emoji} {status.title()}")
+                    else:
+                        st.metric("Statut", "❓ Processing")
+                        st.caption("État incertain")
+                else:
+                    st.metric("Statut", f"{status_emoji} {status.title()}")
+                    if status == 'completed':
+                        st.caption("Prêt à télécharger")
+                    elif status == 'failed':
+                        st.caption("Vérifiez données partielles")
 
             # Boutons d'export - Permettre l'export même pour les sessions failed s'il y a des données
             if status in ['completed', 'processing']:

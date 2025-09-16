@@ -334,6 +334,44 @@ class DatabaseService:
             logger.error(f"Erreur récupération stats: {e}")
             return {}
 
+    def _is_session_truly_inactive(self, session_data: Dict) -> bool:
+        """Détermine si une session est réellement inactive basé sur last_activity
+
+        Args:
+            session_data: Données de la session depuis Supabase
+
+        Returns:
+            bool: True si la session est inactive depuis plus de 3 minutes
+        """
+        last_activity_str = session_data.get('last_activity')
+
+        if not last_activity_str:
+            # Pas de last_activity = session très ancienne ou créée avant la mise à jour
+            # On considère comme inactive
+            return True
+
+        try:
+            # Parser le timestamp ISO
+            last_activity = datetime.fromisoformat(last_activity_str.replace('Z', '+00:00'))
+            current_time = datetime.now()
+
+            # Si c'est un timestamp UTC, on doit le comparer à UTC
+            if '+' in last_activity_str or 'Z' in last_activity_str:
+                from datetime import timezone
+                current_time = datetime.now(timezone.utc)
+
+            # Calculer la différence
+            time_diff = current_time - last_activity
+            inactive_minutes = time_diff.total_seconds() / 60
+
+            # Session inactive si pas d'activité depuis plus de 3 minutes
+            return inactive_minutes > 3.0
+
+        except Exception as e:
+            logger.warning(f"Erreur parsing last_activity: {e}")
+            # En cas d'erreur, on considère comme inactive par sécurité
+            return True
+
     def detect_and_fix_stuck_sessions(self):
         """Détecte et corrige les sessions bloquées/gelées"""
         try:
@@ -348,6 +386,15 @@ class DatabaseService:
                 session_id = session['id']
                 session_name = session.get('session_name', 'N/A')
 
+                # NOUVELLE LOGIQUE: Vérifier d'abord si la session est réellement inactive
+                if not self._is_session_truly_inactive(session):
+                    # Session encore active (activité récente), on ne la touche pas
+                    logger.debug(f"Session {session_name} encore active - ignorée par watchdog")
+                    continue
+
+                # Si on arrive ici, la session est réellement inactive depuis >3min
+                logger.info(f"Session inactive détectée: {session_name} (>3min sans activité)")
+
                 # Vérifier les hôtels réels vs déclarés
                 actual_hotels = self.client.client.table("hotels")\
                     .select("*")\
@@ -360,26 +407,27 @@ class DatabaseService:
                 # Compter les hôtels terminés
                 completed_hotels = [h for h in actual_hotels.data
                                    if h.get('extraction_status') == 'completed']
-                processing_hotels = [h for h in actual_hotels.data
-                                   if h.get('extraction_status') == 'processing']
 
-                # Détecter une session "gelée" : tous les hôtels sont completed mais session encore processing
+                # Cas 1: Tous les hôtels sont completed mais session encore processing
                 if len(completed_hotels) == actual_count and actual_count > 0:
                     logger.warning(f"Session gelée détectée: {session_name} - {actual_count} hôtels completed mais session en processing")
-
-                    # Auto-finaliser cette session
                     self.finalize_session(session_id, success=True)
                     fixed_count += 1
                     logger.info(f"Session {session_name} auto-finalisée ({actual_count} hôtels)")
 
-                elif len(processing_hotels) == 0 and actual_count < declared_count:
-                    # Cas où des hôtels manquent et plus rien ne se passe
-                    logger.warning(f"Session incomplète détectée: {session_name} - {actual_count}/{declared_count} hôtels, aucun en cours")
-
-                    # Finaliser avec les hôtels disponibles
-                    self.finalize_session(session_id, success=(actual_count > 0))
+                # Cas 2: Session inactive + données partielles (au moins quelques hôtels traités)
+                elif actual_count > 0:
+                    logger.warning(f"Session incomplète inactive: {session_name} - {actual_count}/{declared_count} hôtels traités, finalisée avec données partielles")
+                    self.finalize_session(session_id, success=True)  # Succès car on a des données
                     fixed_count += 1
-                    logger.info(f"Session {session_name} finalisée avec {actual_count}/{declared_count} hôtels")
+                    logger.info(f"Session {session_name} finalisée avec données partielles ({actual_count}/{declared_count})")
+
+                # Cas 3: Session inactive sans aucun hôtel traité
+                else:
+                    logger.warning(f"Session vide inactive: {session_name} - Aucun hôtel traité, marquée échouée")
+                    self.finalize_session(session_id, success=False)
+                    fixed_count += 1
+                    logger.info(f"Session {session_name} marquée échouée (aucune donnée)")
 
             if fixed_count > 0:
                 logger.info(f"Watchdog: {fixed_count} sessions gelées corrigées")

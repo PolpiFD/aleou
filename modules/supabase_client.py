@@ -9,6 +9,7 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 import time
 from functools import wraps
+from datetime import datetime
 
 load_dotenv()
 
@@ -79,7 +80,8 @@ class SupabaseClient:
             "session_name": session_name,
             "total_hotels": total_hotels,
             "csv_filename": csv_filename,
-            "status": "processing"
+            "status": "processing",
+            "last_activity": datetime.now().isoformat()
         }
 
         result = self.client.table("extraction_sessions").insert(data).execute()
@@ -99,10 +101,25 @@ class SupabaseClient:
             status: Nouveau statut
             processed_hotels: Nombre d'hôtels traités
         """
-        data = {"status": status}
+        data = {
+            "status": status,
+            "last_activity": datetime.now().isoformat()
+        }
         if processed_hotels is not None:
             data["processed_hotels"] = processed_hotels
 
+        self.client.table("extraction_sessions").update(data).eq(
+            "id", session_id
+        ).execute()
+
+    @retry_on_error(max_retries=3)
+    def update_session_activity(self, session_id: str):
+        """Met à jour uniquement le timestamp d'activité d'une session
+
+        Args:
+            session_id: ID de la session
+        """
+        data = {"last_activity": datetime.now().isoformat()}
         self.client.table("extraction_sessions").update(data).eq(
             "id", session_id
         ).execute()
