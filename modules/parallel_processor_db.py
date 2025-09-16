@@ -176,10 +176,19 @@ class ParallelHotelProcessorDB:
                     await self._safe_callback(progress_callback, stats)
 
             # Finaliser la session
-            self.db_service.finalize_session(
-                session_id,
-                success=(total_errors == 0)
-            )
+            logger.info(f"🏁 Finalisation session {session_id}: {total_success} succès, {total_errors} erreurs")
+            print(f"🏁 Finalisation session: {total_success} succès, {total_errors} erreurs")
+
+            try:
+                self.db_service.finalize_session(
+                    session_id,
+                    success=(total_errors == 0)
+                )
+                print(f"✅ Session {session_id} finalisée avec succès")
+            except Exception as e:
+                logger.error(f"❌ Erreur finalisation session: {e}")
+                print(f"❌ Erreur finalisation session: {e}")
+                raise
 
             self._running = False
 
@@ -201,8 +210,18 @@ class ParallelHotelProcessorDB:
 
         except Exception as e:
             self._running = False
-            logger.error(f"Erreur critique: {e}")
-            self.db_service.finalize_session(session_id, success=False)
+            logger.error(f"💥 ERREUR CRITIQUE dans le processeur: {e}")
+            print(f"💥 ERREUR CRITIQUE: {e}")
+
+            # Essayer de finaliser la session même en cas d'erreur critique
+            try:
+                logger.warning(f"🔄 Tentative finalisation d'urgence session {session_id}")
+                self.db_service.finalize_session(session_id, success=False)
+                print(f"⚠️ Session {session_id} finalisée d'urgence (échouée)")
+            except Exception as finalizer_error:
+                logger.error(f"❌ Impossible de finaliser la session: {finalizer_error}")
+                print(f"❌ Finalisation échouée: {finalizer_error}")
+
             raise
 
     def _create_batches(

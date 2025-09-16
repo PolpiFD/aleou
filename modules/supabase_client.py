@@ -372,8 +372,8 @@ class SupabaseClient:
                     if db_column == "photos_urls" and isinstance(value, list):
                         cleaned_data[db_column] = value
                     elif db_column.startswith('pr_'):
-                        # Champs PR sont des booleans - convertir automatiquement
-                        cleaned_data[db_column] = self._convert_to_boolean(value)
+                        # Champs PR mixtes : certains int (capacités), d'autres boolean (Yes/No)
+                        cleaned_data[db_column] = self._convert_pr_field(db_column, value)
                     else:
                         cleaned_data[db_column] = value
 
@@ -381,38 +381,68 @@ class SupabaseClient:
         if len(cleaned_data) > 1:  # Plus que juste hotel_id
             self.client.table("hotel_website_data").insert(cleaned_data).execute()
 
-    def _convert_to_boolean(self, value) -> bool:
-        """Convertit intelligemment une valeur vers un boolean pour les champs PR
+    def _convert_pr_field(self, field_name: str, value) -> Union[bool, int, str]:
+        """Convertit intelligemment les champs PR selon leur type Supabase réel
 
         Args:
-            value: La valeur à convertir (peut être string, int, bool, etc.)
+            field_name: Nom du champ (pr_amphi, pr_nature, etc.)
+            value: La valeur à convertir
 
         Returns:
-            bool: True ou False selon la logique de conversion
+            Union[bool, int, str]: Type correspondant au schéma Supabase
         """
-        if isinstance(value, bool):
+        # Champs booléens selon le schéma Supabase réel
+        boolean_fields = {
+            'pr_amphi', 'pr_hotel', 'pr_acces_facile', 'pr_banquet',
+            'pr_lieu_atypique', 'pr_nature', 'pr_mer', 'pr_montagne',
+            'pr_centre_ville', 'pr_parking', 'pr_restaurant', 'pr_piscine',
+            'pr_spa', 'pr_wifi', 'pr_sun', 'pr_contemporaine', 'pr_acces_pmr',
+            'pr_visio', 'pr_eco_label', 'pr_rooftop', 'pr_esat'
+        }
+
+        # Champ entier selon le schéma Supabase
+        integer_fields = {'pr_room_nb'}
+
+        # Champ texte selon le schéma Supabase
+        text_fields = {'pr_contact'}
+
+        if field_name in boolean_fields:
+            # Convertir en boolean pour Supabase
+            if isinstance(value, bool):
+                return value
+            elif isinstance(value, str):
+                if value.lower() in ['yes', 'true', '1', 'oui', 'on']:
+                    return True
+                elif value.lower() in ['no', 'false', '0', 'non', 'off']:
+                    return False
+                # Si c'est un nombre en string
+                try:
+                    num_value = float(value)
+                    return num_value > 0
+                except (ValueError, TypeError):
+                    return len(value.strip()) > 0
+            elif isinstance(value, (int, float)):
+                return value > 0
+            return False
+
+        elif field_name in integer_fields:
+            # Garder comme entier
+            if isinstance(value, (int, float)):
+                return int(value)
+            elif isinstance(value, str):
+                try:
+                    return int(float(value))
+                except (ValueError, TypeError):
+                    return 0
+            return 0
+
+        elif field_name in text_fields:
+            # Garder comme texte
+            return str(value) if value is not None else ""
+
+        else:
+            # Champ pr_ inconnu, retourner tel quel
             return value
-
-        if isinstance(value, str):
-            # Valeurs textuelles communes
-            if value.lower() in ['true', '1', 'yes', 'oui', 'on']:
-                return True
-            elif value.lower() in ['false', '0', 'no', 'non', 'off']:
-                return False
-            # Si c'est un nombre en string
-            try:
-                num_value = float(value)
-                return num_value > 0
-            except (ValueError, TypeError):
-                # Si ce n'est pas un nombre, considérer les strings non-vides comme True
-                return len(value.strip()) > 0
-
-        if isinstance(value, (int, float)):
-            # Les nombres > 0 sont True, 0 ou négatifs sont False
-            return value > 0
-
-        # Pour tout autre type, considérer les valeurs non-nulles comme True
-        return value is not None
 
     # ============ Query Methods ============
 
