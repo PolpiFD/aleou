@@ -26,9 +26,9 @@ class ParallelConfig:
     """Configuration du traitement parallèle"""
     max_workers: int = 4
     batch_size: int = 10  # Batch de 10 comme demandé
-    cvent_timeout: int = 45
-    gmaps_timeout: int = 30
-    website_timeout: int = 120
+    cvent_timeout: int = 120
+    gmaps_timeout: int = 90
+    website_timeout: int = 180
 
     @classmethod
     def from_machine_specs(cls, ram_gb: int = 16, cvent_only: bool = False):
@@ -167,22 +167,12 @@ class ParallelHotelProcessorDB:
                     try:
                         done_tasks, pending_tasks = await asyncio.wait(
                             [task for task, _ in active_tasks],
-                            return_when=asyncio.FIRST_COMPLETED,
-                            timeout=300  # 5 minutes max - Force progression si batch bloqué
+                            return_when=asyncio.FIRST_COMPLETED
                         )
 
-                        # Si timeout, forcer la progression en annulant les tâches lentes
-                        if not done_tasks and pending_tasks:
-                            logger.warning(f"⚠️ Timeout 300s atteint - Annulation tâches lentes pour débloquer progression")
-                            for task in pending_tasks:
-                                task.cancel()
-                            # Considérer les tâches annulées comme terminées avec erreur
-                            done_tasks = pending_tasks
-                            pending_tasks = set()
-
-                    except asyncio.TimeoutError:
-                        logger.warning(f"⚠️ Timeout asyncio.wait - Progression forcée")
-                        done_tasks = set([task for task, _ in active_tasks])
+                    except Exception as e:
+                        logger.error(f"❌ Erreur asyncio.wait: {e}")
+                        done_tasks = set()
                         pending_tasks = set()
 
                     # Traiter les tâches terminées
@@ -541,7 +531,7 @@ class ParallelHotelProcessorDB:
         loop = asyncio.get_event_loop()
 
         # Pattern temporaire (comme ancien code qui marchait) - évite accumulation threads
-        with ThreadPoolExecutor(max_workers=1) as executor:
+        with ThreadPoolExecutor(max_workers=10) as executor:
             future = loop.run_in_executor(
                 executor,
                 extract_cvent_data,
