@@ -531,7 +531,7 @@ class ParallelHotelProcessorDB:
         loop = asyncio.get_event_loop()
 
         # Pattern temporaire (comme ancien code qui marchait) - évite accumulation threads
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=1) as executor:
             future = loop.run_in_executor(
                 executor,
                 extract_cvent_data,
@@ -540,14 +540,15 @@ class ParallelHotelProcessorDB:
                 hotel_data['url']
             )
 
-        try:
-            result = await asyncio.wait_for(
-                future,
-                timeout=self.config.cvent_timeout
-            )
-            return result
-        except asyncio.TimeoutError:
-            raise Exception(f"Timeout Cvent ({self.config.cvent_timeout}s)")
+            # ✅ CRITICAL FIX: Await INSIDE with block to prevent shutdown(wait=True) blocking
+            try:
+                result = await asyncio.wait_for(
+                    future,
+                    timeout=self.config.cvent_timeout
+                )
+                return result
+            except asyncio.TimeoutError:
+                raise Exception(f"Timeout Cvent ({self.config.cvent_timeout}s)")
 
     async def _extract_gmaps_async(
         self,
